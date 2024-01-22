@@ -1,0 +1,2 @@
+(defpackage opty
+  (:use cl))
