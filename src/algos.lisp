@@ -165,3 +165,18 @@
     (true (subsetp (back-edges classification)
                    '((3 . 2) (4 . 1))
                    :test 'equal))))
+
+;; graph node ordering
+(defun rpo-nodes (digraph)
+  "Return reverse post-order nodes of classified graph."
+  (loop for v being the hash-values of (nodes digraph)
+        collect v into values
+        finally (return (sort values (lambda (a b)
+                                       (< (rpost a) (rpost b)))))))
+
+(define-test reverse-post-order
+  (let* ((digraph (make-classified-graph "maxcol" maxcol-graph))
+         (node-nrs (loop for n in (rpo-nodes digraph)
+                         collect (id n))))
+    (true (equal node-nrs
+                 '(0 1 2 6 3 4 5)))))

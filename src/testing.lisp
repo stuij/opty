@@ -1,2 +1,3 @@
 (defun run-tests ()
-  (test 'classify-graph))
+  (test 'classify-graph)
+  (test 'reverse-post-order)))
