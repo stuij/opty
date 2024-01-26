@@ -1,2 +1,2 @@
 (defpackage opty
-  (:use cl))
+  (:use cl parachute))

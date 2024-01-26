@@ -6,5 +6,6 @@
   :serial t
   :components
   ((:file "package")
-   (:file "src/algos"))
-  :depends-on ())
+   (:file "src/algos")
+   (:file "src/testing")))
+  :depends-on (parachute))

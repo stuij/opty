@@ -99,8 +99,18 @@
     (5 ())                ;; B5
     (6 ((6 . 3)))))       ;; B6
 
-(defun test-classify (label graph)
-  (let ((digraph (to-digraph label graph #'initialize-classify-node)))
-    (classify-graph digraph)))
-
-;; (test-classify "maxcol-graph" maxcol-graph)
+(define-test classify-graph
+  (let* ((digraph (to-digraph "maxcol" maxcol-graph #'initialize-classify-node))
+         (classification (classify-graph digraph)))
+    (true (subsetp (tree-edges classification)
+                   '((0 . 1) (1 . 2) (2 . 3) (3 . 4) (4 . 5) (2 . 6))
+                   :test 'equal))
+    (true (subsetp (forward-edges classification)
+                   '((1 . 4) (0 . 5))
+                   :test 'equal))
+    (true (subsetp (cross-edges classification)
+                   '((6 . 3))
+                   :test 'equal))
+    (true (subsetp (back-edges classification)
+                   '((3 . 2) (4 . 1))
+                   :test 'equal))))
