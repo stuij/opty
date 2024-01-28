@@ -37,10 +37,11 @@
 (defun graph-exit (graph)
   (cdadr graph))
 
-;; digraph
+;; digraph - structured graph
 (defclass digraph-node ()
-  ((id         :initarg :id         :accessor id)
-   (successors :initarg :successors :accessor successors)))
+  ((id           :initarg :id           :accessor id)
+   (predecessors :initarg :predecessors :accessor predecessors :initform '())
+   (successors   :initarg :successors   :accessor successors   :initform '())))
 
 (defmethod print-object ((obj digraph-node) out)
   (with-slots (id) obj
@@ -55,23 +56,34 @@
    (analyses :initarg :analyses :accessor analyses
              :initform (make-hash-table))))
 
+;; base class for analyses
+(defclass analysis () ())
+
 (defun initialize-digraph-node (id)
-  (make-instance 'digraph-node :id id
-                               :successors '()))
+  (make-instance 'digraph-node :id id))
 
 (defun to-digraph (label graph &optional (initializer #'initialize-digraph-node))
   (let* ((nodes (make-hash-table))
          (node-ids (graph-nodes graph))
          (edges (graph-edges graph)))
+    ;; create nodes
     (loop for id in node-ids
           do (setf (gethash id nodes)
                    (funcall initializer id)))
+    ;; set successors
     (loop for e in edges
-          do (let ((origin (car e))
-                   (successor (cdr e)))
+          do (let* ((origin (car e))
+                    (successor (cdr e)))
                (setf (successors (gethash origin nodes))
                      (append (successors (gethash origin nodes))
                              (list (gethash successor nodes))))))
+    ;; set predecessors
+    (loop for n being the hash-values of nodes
+          do (loop for s in (successors n)
+                   do (setf (predecessors s)
+                            (append (predecessors s)
+                                    (list n)))))
+    ;; create the digraph
     (make-instance 'digraph :label label
                             :nodes nodes
                             :entry (gethash (graph-entry graph) nodes)
@@ -93,10 +105,9 @@
    (rpost :initarg :rpost :accessor rpost :initform 0)))
 
 (defun initialize-classify-node (id)
-  (make-instance 'classify-node :id id
-                                :successors '()))
+  (make-instance 'classify-node :id id))
 
-(defclass edge-classification ()
+(defclass edge-classification (analysis)
   ((tree-edges    :initarg :tree-edges    :accessor tree-edges    :initform '())
    (forward-edges :initarg :forward-edges :accessor forward-edges :initform '())
    (cross-edges   :initarg :cross-edges   :accessor cross-edges   :initform '())
@@ -112,19 +123,24 @@
                      preorder (1+ preorder))
                (loop for s in (successors node)
                      do (cond ((= (pre s) 0)
+                               ;; is tree-edge - hasn't been visited yet
                                (setf (tree-edges classification)
                                      (append (tree-edges classification)
                                              `((,(id node) . ,(id s)))))
                                (dfs s))
                               ((= (rpost s) 0)
+                               ;; is back-edge - is still on the stack
                                (setf (back-edges classification)
                                      (append (back-edges classification)
                                              `((,(id node) . ,(id s))))))
                               ((< (pre node) (pre s))
+                               ;; is forward edge - s has been processed before us
                                (setf (forward-edges classification)
                                      (append (forward-edges classification)
                                              `((,(id node) . ,(id s))))))
                               (t
+                               ;; is cross-edge - prev clauses covered either
+                               ;;                 up or down the chain
                                (setf (cross-edges classification)
                                      (append (cross-edges classification)
                                              `((,(id node) . ,(id s))))))))
