@@ -45,14 +45,23 @@
     (loop while (not (eq finger-a finger-b))
           do (progn
                (loop while (< (rpost finger-b) (rpost finger-a))
-                     do (progn
-                          (setf finger-a (gethash (id finger-a) idoms))))
+                     do (setf finger-a (gethash (id finger-a) idoms)))
                (loop while (< (rpost finger-a) (rpost finger-b))
-                     do (progn
-                          (setf finger-b (gethash (id finger-b) idoms))))))
+                     do (setf finger-b (gethash (id finger-b) idoms)))))
     finger-a))
 
-;; todo: actual test
-(defun test-dom ()
-  (let ((graph (make-classified-graph "maxcol" maxcol-graph)))
-    (calculate-dom graph)))
+(defun print-idoms (idoms)
+  (loop for v being the hash-values of idoms
+        using (hash-key k)
+        collect (cons k (id v))))
+
+(define-test idoms
+  (let* ((idoms (calculate-dom (make-classified-graph "maxcol" maxcol-graph)))
+         (idoms-list (print-idoms idoms)))
+    (true (subsetp '((0 . 0)) idoms-list :test 'equal))
+    (true (subsetp '((1 . 0)) idoms-list :test 'equal))
+    (true (subsetp '((2 . 1)) idoms-list :test 'equal))
+    (true (subsetp '((6 . 2)) idoms-list :test 'equal))
+    (true (subsetp '((3 . 2)) idoms-list :test 'equal))
+    (true (subsetp '((4 . 1)) idoms-list :test 'equal))
+    (true (subsetp '((5 . 0)) idoms-list :test 'equal))))
