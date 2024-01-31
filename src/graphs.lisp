@@ -39,7 +39,7 @@
 
 ;; digraph - structured graph
 (defclass digraph-node ()
-  ((id           :initarg :id           :accessor id)
+  ((id           :initarg :id           :accessor id           :initform nil)
    (predecessors :initarg :predecessors :accessor predecessors :initform '())
    (successors   :initarg :successors   :accessor successors   :initform '())))
 

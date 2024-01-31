@@ -6,7 +6,10 @@
   :serial t
   :components
   ((:file "package")
+   (:file "src/common")
    (:file "src/graphs")
-   (:file "src/dominator")
-   (:file "src/testing")))
+   (:file "src/domination")
+   (:file "src/flow-graph")
+   (:file "src/testing"))
   :depends-on (parachute))
+

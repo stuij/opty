@@ -1,0 +1,9 @@
+(defun maxcol (a n large value)
+  (dotimes (i (0 n))
+    (set-arr large i 0)
+    (set-arr value i (dabs (aref a 0 i)))
+    (dotimes (j (1 n))
+      (if (> (aref a j i) (aref value i))
+          (progn
+            (set-arr value i (dabs (aref a j i)))
+            (set-arr large i j))))))
