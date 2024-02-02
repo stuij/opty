@@ -1,0 +1,13 @@
+(defun maxcol (a n large value)
+  (type u32 n)
+  (type (array double n n) a)
+  (type (array u32 n) large)
+  (type (array double n) value)  
+  (dotimes (i (0 n))
+    (set-arr large i 0)
+    (set-arr value i (dabs (aref a 0 i)))
+    (dotimes (j (1 n))
+      (if (> (aref a j i) (aref value i))
+          (progn
+            (set-arr value i (dabs (aref a j i)))
+            (set-arr large i j))))))

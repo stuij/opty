@@ -131,50 +131,120 @@
 (defun create-block (id)
   (make-instance 'basic-block :id id))
 
+
 ;; graph
 (defclass flow-graph (digraph)
-  ((bb-count :initarg :bb-counter :accessor bb-count :initform (counter))
-   (current  :initarg current :accessor current)))
+  ((args       :initarg :args       :accessor args     :initform '())
+   (bb-count   :initarg :bb-counter :accessor bb-count :initform (counter))
+   (current    :initarg :current    :accessor current)
+   (temp-table :initarg :temp-table :accessor temp-table
+               :initform (make-instance 'temp-table))))
 
 (defmethod start-block ((graph flow-graph) (block basic-block))
   (setf (current graph) block))
 
 (defun initialize-graph (label)
   (let* ((entry (create-block 0))
-         (exit (create-block nil))
-	 (graph (make-instance
-		 'flow-graph :entry entry :exit exit
-		 :nodes (list entry exit)
-		 :label label)))
+         (exit (create-block 1))
+	     (graph (make-instance
+		         'flow-graph :entry entry :exit exit
+		         :nodes (list entry exit)
+		         :label label)))
+    (setf (successors entry) (list exit))
+    (setf (predecessors exit) (list entry))
     (start-block graph entry)
     graph))
 
-(defun defun-to-flow (exp env)
-  (let ((graph (initialize-graph (string-downcase (string (car exp))))))
-    graph))
+(defun op-to-ident (op args)
+  (append (list op)
+          (loop for a in args
+                collect (name a))))
 
-(defun to-flow (form env)
-  (case (car form)
-    ('defun (defun-to-flow (cdr form) env))))
+(defun plain-op-to-flow (op args expr env graph)
+  (let* ((args (loop for expr in args
+                     collect (to-flow expr env graph)))
+         (op-instance (funcall (make-op-name op) args))
+         (op-ident (op-to-ident op args)))
+    (let ((ret (to-temp op-ident (temp-table graph)
+                        :source expr
+                        :type (op-result-type op-instance))))
+      (setf (result op-instance) ret)
+      (append-op op-instance graph)
+      ret)))
 
-(defun forms-to-flowgraph (forms)
+(defun to-flow (expr env graph)
+  (if (atom expr)
+      (if-let (var (lookup expr env))
+        (temp var)
+        (error "Var not found in environment: ~A" expr))
+      (let ((thing (car expr)))
+        (if-let (op-entry (assoc thing *src-to-plain-ops-table*))
+          (plain-op-to-flow (cdr op-entry) (cdr expr) expr env graph)
+          (error "op not supported yet: ~S" thing)))))
+
+(defun handle-args (args graph env)
+  (assert (= (length args) (length (remove-duplicates args)))
+            (args) "Function argument list contains duplicates: ~A" args)
+  (loop for a in args
+        do (progn
+             (assert (symbolp a) (a)
+                     "Function arguments should only consist of symbols: ~A" a)
+             (let ((temp (to-temp a
+                                  (temp-table graph)
+                                  :source a
+                                  :name a
+                                  :first t)))
+               (setf (args graph)
+                     (append (args graph)
+                             (list temp)))
+               (to-env a temp env))))
+  args)
+
+(defun defun-to-flow (expr env)
+  (let ((graph (initialize-graph (string-downcase (string (car expr)))))
+        (env (expand-env env))
+        (args (cadr expr))
+        (body (cddr expr)))
+    (handle-args args graph env)
+    (let ((ret (loop with ret = nil
+                     for expr in body
+                     do (setf ret (to-flow expr env graph))
+                     return ret)))
+      (cons graph ret))))
+
+;; defun-to-flow todo:
+;; - bind ret of last expr to fn return value
+
+(defun top-to-flow (expr env)
+  "top level exprs will return flow-graphs but won't pass them"
+  (case (car expr)
+    ('defun (defun-to-flow (cdr expr) env))))
+
+(defun exprs-to-flowgraph (exprs)
   "abstract from froms input (file, string, etc..)"
-  (let ((env '()))
-    (loop for f in forms
-	  collect (if (eq (car f) 'defun)
-		      (to-flow f env)
-		      (error "only defun toplevel forms supported at the moment")))))
+  (let ((env (make-env)))
+    (cons
+     (loop for f in exprs
+	       collect (if (eq (car f) 'defun)
+		               (top-to-flow f env)
+		               (error "only defun toplevel exprs supported at the moment")))
+     env)))
 
-(defun read-forms-from-stream (stream)
-  "`read` stream, so source code gets transformed into lists of tokens"
+(defun read-exprs-from-stream (stream)
+  "`read` stream, so source code gets transexpred into lists of tokens"
   (loop for statement = (read stream nil)
         while statement
         collect statement))
 
 (defun file-to-flow-graph (file)
-  (let* ((forms (with-open-file (stream file)
-                  (read-forms-from-stream stream))))
-    (forms-to-flowgraph forms)))
+  (let* ((exprs (with-open-file (stream file)
+                  (read-exprs-from-stream stream))))
+    (exprs-to-flowgraph exprs)))
 
-(defun read-maxcol ()
-  (file-to-flow-graph (opty-path "snippets/maxcol.opt")))
+(defun to-ir (name)
+  "Convenience function to test files from the Lasp dir."
+  (file-to-flow-graph (opty-path (with-output-to-string (s)
+                                   (format s "snippets/lasp/~A.lasp" name)))))
+
+;; (to-ir "maxcol")
+;; (to-ir "add")
