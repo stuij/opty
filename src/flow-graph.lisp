@@ -81,6 +81,49 @@
               temp)))))
 
 
+;; environment
+(defclass var ()
+  ((name     :initarg :name     :accessor name)
+   (env-id   :initarg :env-id   :accessor env-id)
+   (temp     :initarg :temp     :accessor temp)
+   (var-type :initarg :var-type :accessor var-type :initform nil)))
+
+(defclass env ()
+  ((id          :initarg :id          :accessor id          :initform 0)
+   (parent      :initarg :parent      :accessor parent      :initform nil)
+   (children    :initarg :children    :accessor children    :initform '())
+   (vars        :initarg :vars        :accessor vars        :initform (make-hash-table))
+   (env-counter :initarg :env-counter :accessor env-counter :initform (counter))))
+
+(defmethod expand-env ((parent env))
+  (with-slots (env-counter) parent
+    (let ((child (make-instance 'env :id (funcall env-counter)
+                                     :parent parent
+                                     :env-counter env-counter)))
+      (setf (children parent)
+            (append (children parent)
+                    (list child)))
+      child)))
+
+(defun lookup (var env)
+  (if (gethash var (vars env))
+      (gethash var (vars env))
+      (if (parent env)
+          (lookup var (parent env)))))
+
+(defun make-env ()
+  (make-instance 'env))
+
+(defun to-env (var temp env &optional type)
+  (assert (not (lookup var env)) (var) "Var ~S is already present in env." var)
+  (let ((instance (make-instance 'var
+                            :name var
+                            :env-id (id env)
+                            :temp temp
+                            :var-type type)))
+    (setf (gethash var (vars env)) instance)))
+
+
 ;; basic block
 (defclass basic-block (digraph-node)
   ((instrs :initarg :instrs :accessor instrs :initform '())))
