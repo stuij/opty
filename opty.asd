@@ -11,5 +11,5 @@
    (:file "src/domination")
    (:file "src/flow-graph")
    (:file "src/testing"))
-  :depends-on (parachute))
+  :depends-on (:parachute :alexandria))
 
