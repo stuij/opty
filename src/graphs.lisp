@@ -146,13 +146,13 @@
                                              `((,(id node) . ,(id s))))))))
                (setf (rpost node) rpostorder
                      rpostorder (1- rpostorder))))
-      (dfs (entry digraph))
-      classification)))
+      (dfs (entry digraph)))
+    (setf (gethash 'classification  (analyses digraph))
+          classification)))
 
 (defun make-classified-graph (name graph)
   (let ((digraph (to-digraph name graph #'initialize-classify-node)))
-    (setf (gethash 'classification  (analyses digraph))
-          (classify-graph digraph))
+    (classify-graph digraph)
     digraph))
 
 ;; testing
