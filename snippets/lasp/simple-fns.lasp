@@ -1,2 +1,16 @@
+(defun empty ())
+
+(defun only-args (a b))
+
 (defun add-it (a b)
   (add a b))
+
+(defun add-sequential (a b)
+  (add a b)
+  (add a b))
+
+(defun add-recursive (a b)
+  (add (add a b) b))
+
+(defun add-mul (a b)
+  (add (mul a b) b))

@@ -84,11 +84,19 @@
 
 
 ;; basic block
-(defclass basic-block (digraph-node)
+(defclass basic-block (classify-node)
   ((instrs :initarg :instrs :accessor instrs :initform '())))
 
-(defun create-block (id)
-  (make-instance 'basic-block :id id))
+(defun create-block (graph)
+  (let ((bb (make-instance 'basic-block :id (funcall (bb-count graph)))))
+    (setf (gethash (id bb) (nodes graph))
+          bb)))
+
+(defun bb-symbol (basic-block)
+  (make-keyword (bb-name basic-block)))
+
+(defun bb-name (basic-block)
+  (format nil "BB-~A" (id basic-block)))
 
 
 ;; graph
@@ -103,13 +111,56 @@
   (setf (current graph) block))
 
 (defun initialize-graph (label)
-  (let* ((entry (create-block 0))
-         (exit (create-block 1))
-	     (graph (make-instance
-		         'flow-graph :entry entry :exit exit
-		         :nodes (list entry exit)
-		         :label label)))
+  (let* ((graph (make-instance
+		         'flow-graph :label label))
+         (entry (create-block graph))
+         (exit (create-block graph)))
+    (setf (entry graph) entry)
+    (setf (exit graph) exit)
     (setf (successors entry) (list exit))
     (setf (predecessors exit) (list entry))
     (start-block graph entry)
     graph))
+
+
+;; serialize
+(defun serialize-arg (s arg colon at)
+  (declare (ignore colon at))
+  (format s "~A" (name arg)))
+
+(defun serialize-arguments (graph s)
+  (format s "(")
+  (format s "~{~/opty:serialize-arg/~^ ~}" (args graph))
+  (format s ")~%"))
+
+(defun serialize-op (op s)
+  (let ((op (opcode op))
+        (operands (loop for o in (operands op)
+                        collect (name o)))
+        (result (name (result op)))
+        (source (source (result op))))
+    (format s "    (~A ~A ~{~A~^ ~}) ;; ~A~%" op result operands source)))
+
+(defun serialize-blocks (graph s)
+  (loop for node in (rpo-nodes graph)
+        do (progn
+             (format s "  :~A~%"(bb-symbol node))
+             (loop for op in (instrs node)
+                   do (serialize-op op s)))))
+
+(defun serialize-func (s graph colon at)
+  (declare (ignore colon at))
+  ;; make sure our tree edge classification is up-to-date
+  (classify-graph graph)
+  (format s "(defun ~A " (label graph))
+  (serialize-arguments graph s)
+  (serialize-blocks graph s)
+  (format s ")"))
+
+(defun serialize-ir (ir s)
+  (format s "~{~/opty:serialize-func/~^~%~%~}" ir))
+
+(defun serialize-ir-to-string (ir)
+  "as opposed to say a file"
+  (with-output-to-string (s)
+    (serialize-ir ir s)))

@@ -99,7 +99,8 @@
                      for e in body
                      do (setf ret (to-flow e env graph))
                      finally (return ret))))
-      (cons graph ret))))
+      (classify-graph graph)
+      graph)))
 
 (defun top-to-flow (expr env)
   "top level exprs will return flow-graphs but won't pass them"
@@ -129,8 +130,11 @@
 
 (defun to-ir (name)
   "Convenience function to test files from the Lasp dir."
-  (file-to-flow-graph (opty-path (with-output-to-string (s)
-                                   (format s "snippets/lasp/~A.lasp" name)))))
+  (file-to-flow-graph (opty-path (format nil "snippets/lasp/~A.lasp" name))))
 
 ;; (to-ir "maxcol")
-;; (to-ir "add")
+;; (to-ir "simple-fns")
+;; (serialize-ir-to-string (car (to-ir "simple-fns")))
+#- (and) (with-input-from-string (s (serialize-ir-to-string (car (to-ir "simple-fns"))))
+           (read-exprs-from-stream s))
+
