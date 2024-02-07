@@ -73,6 +73,53 @@
                      collect (to-flow expr env graph))))
     (emit-op op args expr graph)))
 
+(defun if-to-flow (args expr env graph)
+  (assert (<= (length args) 3) (args)
+          "argument arity to `if` exceeds 3: ~A" args)
+  (assert (> (length args) 1) (args)
+          "`if` needs at least a condition and a clause: ~A" args)
+  (destructuring-bind (cond-form true-form false-form) args
+      (let* ((bb-true (create-bb graph))
+             (bb-false (create-bb graph))
+             (bb-cont (create-bb graph))
+             (cond-temp (to-flow cond-form env graph))
+             (ret (new-temp (temp-table graph))))
+        (emit-op 'ibcond (list cond-temp bb-true bb-false) expr graph)
+        (start-block bb-true graph)
+        (let ((tmp-true (to-flow true-form env graph)))
+          (emit-op 'icpy (list ret tmp-true) expr graph)
+          (emit-op 'jmp (list bb-cont) expr graph))
+        (start-block bb-false graph)
+        (let ((tmp-false (to-flow false-form env graph)))
+          (emit-op 'icpy (list ret tmp-false) expr graph)
+          (emit-op 'jmp (list bb-cont) expr graph))
+        (start-block bb-cont graph)
+        ret)))
+
+(setf (gethash 'if *builtins*)  #'if-to-flow)
+
+;; Very similar to if expression, but as we don't need to evaluate a body.
+;; I hope we can get away with not branching to a new bb for the 1st clause,
+;; and optimizing out the double ret assignment to a phi node later on.
+(defun and-to-flow (args expr env graph)
+  (assert (= (length args) 2) (args)
+          "argument arity to `and` isn't 2: ~A" args)
+  (let* ((bb-2nd-clause (create-bb graph))
+         (bb-cont (create-bb graph))
+         ;; code to calc 1st arg is handled in the current block
+         (1st-clause-tmp (to-flow (car args) env graph))
+         (ret (new-temp (temp-table graph) (temp-type 1st-clause-tmp))))
+    (emit-op 'icpy (list ret 1st-clause-tmp) expr graph)
+    (emit-op 'ibcond (list 1st-clause-tmp bb-2nd-clause bb-cont) expr graph)
+    (start-block bb-2nd-clause graph)
+    (let ((2nd-clause-ret (to-flow (cadr args) env graph)))
+      (emit-op 'icpy (list ret 2nd-clause-ret) expr graph)
+      (emit-op 'jmp (list bb-cont) expr graph))
+    (start-block bb-cont graph)
+    ret))
+
+(setf (gethash 'and *builtins*)  #'and-to-flow)
+
 (defun to-flow (expr env graph)
   (if (atom expr)
       (if-let (var (lookup expr env))
