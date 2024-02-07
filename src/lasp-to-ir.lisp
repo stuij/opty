@@ -43,23 +43,35 @@
     (setf (gethash var (vars env)) instance)))
 
 
-;; parse source language to IR
+
 
 ;; Mapping of source language to opcode name for basic ops.
-(defparameter *src-to-plain-ops-table*
-  '((add . iadd) (mul . imul)))
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  (defparameter *builtins*
+    (make-hash-table)))
 
+(defmacro plain-op-to-builtins (op-list)
+  `(progn
+     ,@(loop for op-spec in op-list
+             collect  (let ((src-op (car op-spec))
+                            (ir-op (cadr op-spec)))
+                        `(setf (gethash ',src-op *builtins*)
+                               (lambda (args expr env graph)
+                                 (plain-op-to-flow
+                                  ',ir-op args expr env graph)))))))
+
+
+(plain-op-to-builtins
+ ((add iadd)
+  (mul imul)
+  (<   ilt)))
+
+
+;; parse source language to IR
 (defun plain-op-to-flow (op args expr env graph)
   (let* ((args (loop for expr in args
-                     collect (to-flow expr env graph)))
-         (op-instance (funcall (make-op-name op) args))
-         (op-ident (op-to-ident op args)))
-    (let ((ret (to-temp op-ident (temp-table graph)
-                        :source expr
-                        :type (op-result-type op-instance))))
-      (setf (result op-instance) ret)
-      (append-op op-instance graph)
-      ret)))
+                     collect (to-flow expr env graph))))
+    (emit-op op args expr graph)))
 
 (defun to-flow (expr env graph)
   (if (atom expr)
@@ -67,9 +79,10 @@
         (temp var)
         (error "Var not found in environment: ~A" expr))
       (let ((thing (car expr)))
-        (if-let (op-entry (assoc thing *src-to-plain-ops-table*))
-          (plain-op-to-flow (cdr op-entry) (cdr expr) expr env graph)
-          (error "op not supported yet: ~S" thing)))))
+        (if-let (handler (gethash thing *builtins*))
+          (funcall handler (cdr expr) expr env graph)
+          ;; TODO: check function environment
+          (error "Op not supported yet: ~S" thing)))))
 
 (defun handle-args (args graph env)
   (assert (= (length args) (length (remove-duplicates args)))
