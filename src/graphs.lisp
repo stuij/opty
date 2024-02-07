@@ -50,7 +50,7 @@
 
 (defclass digraph ()
   ((label    :initarg :label    :accessor label)
-   (nodes    :initarg :nodes    :accessor nodes :initform (make-hash-table))
+   (nodes    :initarg :nodes    :accessor nodes)
    (entry    :initarg :entry    :accessor entry)
    (exit     :initarg :exit     :accessor exit)
    (analyses :initarg :analyses :accessor analyses

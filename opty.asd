@@ -10,7 +10,7 @@
    (:file "src/graphs")
    (:file "src/domination")
    (:file "src/ir")
-   (:file "src/src-to-ir")
+   (:file "src/lasp-to-ir")
    (:file "src/testing"))
   :depends-on (:parachute :alexandria))
 
