@@ -3,24 +3,24 @@
 (defun only-args (a b))
 
 (defun add-it (a b)
-  (add a b))
+  (+ a b))
 
 (defun add-sequential (a b)
-  (add a b)
-  (add a b))
+  (+ a b)
+  (+ a b))
 
 (defun add-recursive (a b)
-  (add (add a b) b))
+  (+ (+ a b) b))
 
 (defun add-mul (a b)
-  (add (mul a b) b))
+  (+ (* a b) b))
 
 (defun and-it (a b)
   (and a b))
 
 (defun and-add (a b)
-  (and (add a b) b)
-  (mul a b))
+  (and (+ a b) b)
+  (* a b))
 
 (defun if-it (a b c)
-  (if a b c))
+  (if (< a b) (+ b c) c))

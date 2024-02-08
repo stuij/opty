@@ -62,8 +62,8 @@
 
 
 (plain-op-to-builtins
- ((add iadd)
-  (mul imul)
+ ((+ iadd)
+  (* imul)
   (<   ilt)))
 
 
