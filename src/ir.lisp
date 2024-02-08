@@ -2,10 +2,10 @@
 
 ;; IR op
 (defclass op ()
-  ((opcode    :initarg :opcode    :reader   opcode)
-   (op-types :initarg  :op-types  :reader   op-types)
-   (res-types :initarg :res-types :reader   res-types)
-   (arity     :initarg :arity     :reader   arity)
+  ((opcode    :initarg :opcode    :accessor opcode)
+   (op-types :initarg  :op-types  :accessor op-types)
+   (res-types :initarg :res-types :accessor res-types)
+   (arity     :initarg :arity     :accessor arity)
    (source    :initarg :source    :accessor source)
    (operands  :initarg :operands  :accessor operands)
    (results   :initarg :results   :accessor results)))
@@ -27,7 +27,7 @@
 (defmacro gen-op-make-fns (op-list)
   `(progn
      ,@(loop for op in op-list
-             collect (destructuring-bind (opcode op-types res-types) op
+             collect (destructuring-bind (opcode res-types op-types) op
                        (let ((fn-name (make-op-name opcode))
                              (arity (length op-types)))
                          `(defun ,fn-name (operands &key results source)
@@ -44,14 +44,15 @@
                              :operands operands
                              :results results)))))))
 
-;; list of op-name, operand types, result types
+;; list of op-name, result types, operand types
 (gen-op-make-fns
- ((iadd (i32 i32) (i32))
-  (imul (i32 i32) (i32))
-  (ilt  (i32 i32) (i32))
-  (icpy (i32 i32) ())
-  (jmp  (label) ())
-  (ibcond (i32 label label) ())))
+ ((iadd   (i32) (i32 i32))
+  (imul   (i32) (i32 i32))
+  (ilt    (i32) (i32 i32))
+  (icpy   ()    (i32 i32))
+  (jmp    ()    (bb))
+  (ibcond ()    (i32 bb bb))
+  (ret    ()    (union))))
 
 (defun install-op (op graph &optional source)
   "Register op in temp table, and append to current block"
@@ -64,12 +65,12 @@
       (if res-types
           (setf (results op) (list ret)))
       (append-op op graph)
-      ret)))
+      (values ret op))))
 
-(defun emit-op (op args expr graph)
-  (install-op (funcall (make-op-name op) args :source expr)
+(defun emit-op (op args graph &optional source)
+  (install-op (funcall (make-op-name op) args :source source)
               graph
-              expr))
+              source))
 
 
 ;; temps
@@ -157,6 +158,8 @@
 
 
 ;; serialize
+(defparameter *print-source* t)
+
 (defun serialize-arg (s arg colon at)
   (declare (ignore colon at))
   (format s "~A" (name arg)))
@@ -178,10 +181,13 @@
                                                    (format nil "~A" source))
                                        "    " "")))
     (if results
-        (format s "    (~A ~{~A~^ ~} ~{~A~^ ~}) ;; ~A~%"
-                opcode results operands one-line-source)
-        (format s "    (~A ~{~A~^ ~}) ;; ~A~%"
-                opcode operands one-line-source))))
+        (format s "    (~A ~{~A~^ ~} ~{~A~^ ~})"
+                opcode results operands)
+        (format s "    (~A ~{~A~^ ~})"
+                opcode operands))
+    (if (and source *print-source*)
+        (format s " ;; ~A~%" one-line-source)
+        (format s "~%"))))
 
 (defun serialize-blocks (graph s)
   (loop for node being the hash-value of (nodes graph)

@@ -71,7 +71,7 @@
 (defun plain-op-to-flow (op args expr env graph)
   (let* ((args (loop for expr in args
                      collect (to-flow expr env graph))))
-    (emit-op op args expr graph)))
+    (emit-op op args graph expr)))
 
 (defun if-to-flow (args expr env graph)
   (assert (<= (length args) 3) (args)
@@ -84,15 +84,15 @@
              (bb-cont (create-bb graph))
              (cond-temp (to-flow cond-form env graph))
              (ret (new-temp (temp-table graph))))
-        (emit-op 'ibcond (list cond-temp bb-true bb-false) expr graph)
+        (emit-op 'ibcond (list cond-temp bb-true bb-false) graph expr)
         (start-block bb-true graph)
         (let ((tmp-true (to-flow true-form env graph)))
-          (emit-op 'icpy (list ret tmp-true) expr graph)
-          (emit-op 'jmp (list bb-cont) expr graph))
+          (emit-op 'icpy (list ret tmp-true) graph expr)
+          (emit-op 'jmp (list bb-cont) graph expr))
         (start-block bb-false graph)
         (let ((tmp-false (to-flow false-form env graph)))
-          (emit-op 'icpy (list ret tmp-false) expr graph)
-          (emit-op 'jmp (list bb-cont) expr graph))
+          (emit-op 'icpy (list ret tmp-false) graph expr)
+          (emit-op 'jmp (list bb-cont) graph expr))
         (start-block bb-cont graph)
         ret)))
 
@@ -109,12 +109,12 @@
          ;; code to calc 1st arg is handled in the current block
          (1st-clause-tmp (to-flow (car args) env graph))
          (ret (new-temp (temp-table graph) (temp-type 1st-clause-tmp))))
-    (emit-op 'icpy (list ret 1st-clause-tmp) expr graph)
-    (emit-op 'ibcond (list 1st-clause-tmp bb-2nd-clause bb-cont) expr graph)
+    (emit-op 'icpy (list ret 1st-clause-tmp) graph expr )
+    (emit-op 'ibcond (list 1st-clause-tmp bb-2nd-clause bb-cont) graph expr)
     (start-block bb-2nd-clause graph)
     (let ((2nd-clause-ret (to-flow (cadr args) env graph)))
-      (emit-op 'icpy (list ret 2nd-clause-ret) expr graph)
-      (emit-op 'jmp (list bb-cont) expr graph))
+      (emit-op 'icpy (list ret 2nd-clause-ret) graph expr)
+      (emit-op 'jmp (list bb-cont) graph expr))
     (start-block bb-cont graph)
     ret))
 
@@ -149,18 +149,28 @@
                (to-env a temp env))))
   args)
 
+(defun emit-ret (ret-temp graph)
+  (multiple-value-bind (_ op) (emit-op 'ret (list ret-temp) graph)
+    (declare (ignore _))
+    (setf (res-types op) (list (temp-type ret-temp)))
+    op))
+
 (defun defun-to-flow (expr env)
   (let ((graph (initialize-graph (string-downcase (string (car expr)))))
         (env (expand-env env))
         (args (cadr expr))
         (body (cddr expr)))
     (handle-args args graph env)
-    (let ((ret (loop with ret = nil
-                     for e in body
-                     do (setf ret (to-flow e env graph))
-                     finally (return ret))))
-      (classify-graph graph)
-      graph)))
+    (let ((ret-temp
+            (if body
+                (loop with ret-temp = nil
+                      for e in body
+                      do (setf ret-temp (to-flow e env graph))
+                      finally (return ret-temp))
+                (to-temp nil (temp-table graph) :type 'void))))
+      (emit-ret ret-temp graph))
+    (setf (exit graph) (current graph))
+    graph))
 
 (defun top-to-flow (expr env)
   "top level exprs will return flow-graphs but won't pass them"
