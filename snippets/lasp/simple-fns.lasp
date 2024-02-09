@@ -1,26 +1,26 @@
-(defun empty ())
+(defun empty void ())
 
-(defun only-args (a b))
+(defun only-args void ((a i32) (b i32)))
 
-(defun add-it (a b)
+(defun add-it i32 ((a i32) (b i32))
   (+ a b))
 
-(defun add-sequential (a b)
+(defun add-sequential i32 ((a i32) (b i32))
   (+ a b)
   (+ a b))
 
-(defun add-recursive (a b)
+(defun add-recursive i32 ((a i32) (b i32))
   (+ (+ a b) b))
 
-(defun add-mul (a b)
+(defun add-mul i32 ((a i32) (b i32))
   (+ (* a b) b))
 
-(defun and-it (a b)
+(defun and-it i32 ((a i32) (b i32))
   (and a b))
 
-(defun and-add (a b)
+(defun and-add i32 ((a i32) (b i32))
   (and (+ a b) b)
   (* a b))
 
-(defun if-it (a b c)
+(defun if-it i32 ((a i32) (b i32) (c i32))
   (if (< a b) (+ b c) c))

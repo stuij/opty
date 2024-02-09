@@ -88,11 +88,18 @@
         (start-block bb-true graph)
         (let ((tmp-true (to-ir true-form env graph)))
           (emit-op 'icpy (list ret tmp-true) graph expr)
-          (emit-op 'jmp (list bb-cont) graph expr))
-        (start-block bb-false graph)
-        (let ((tmp-false (to-ir false-form env graph)))
-          (emit-op 'icpy (list ret tmp-false) graph expr)
-          (emit-op 'jmp (list bb-cont) graph expr))
+          (emit-op 'jmp (list bb-cont) graph expr)
+          (start-block bb-false graph)
+          (let ((tmp-false (to-ir false-form env graph)))
+            ;; TODO: fix the result value of if's can only be i32
+            (assert (and (eq (temp-type tmp-true) 'i32)
+                         (eq (temp-type tmp-false) 'i32))
+                    (tmp-true tmp-false)
+                    "`if` argument values aren't equal to i32: ~A, ~A"
+                    tmp-true tmp-false)
+            (setf (temp-type ret) 'i32)
+            (emit-op 'icpy (list ret tmp-false) graph expr)
+          (emit-op 'jmp (list bb-cont) graph expr)))
         (start-block bb-cont graph)
         ret)))
 
@@ -112,8 +119,14 @@
     (emit-op 'icpy (list ret 1st-clause-tmp) graph expr )
     (emit-op 'ibcond (list 1st-clause-tmp bb-2nd-clause bb-cont) graph expr)
     (start-block bb-2nd-clause graph)
-    (let ((2nd-clause-ret (to-ir (cadr args) env graph)))
-      (emit-op 'icpy (list ret 2nd-clause-ret) graph expr)
+    (let ((2nd-clause-tmp (to-ir (cadr args) env graph)))
+      (assert (and (eq (temp-type 1st-clause-tmp) 'i32)
+                   (eq (temp-type 2nd-clause-tmp) 'i32))
+              (1st-clause-tmp 2nd-clause-tmp)
+              "`and` argument values aren't equal to i32: ~A, ~A"
+              1st-clause-tmp 2nd-clause-tmp)
+      (setf (temp-type ret) 'i32)
+      (emit-op 'icpy (list ret 2nd-clause-tmp) graph expr)
       (emit-op 'jmp (list bb-cont) graph expr))
     (start-block bb-cont graph)
     ret))
@@ -136,17 +149,20 @@
             (args) "Function argument list contains duplicates: ~A" args)
   (loop for a in args
         do (progn
-             (assert (symbolp a) (a)
-                     "Function arguments should only consist of symbols: ~A" a)
-             (let ((temp (to-temp a
-                                  (temp-table graph)
-                                  :source a
-                                  :name a
-                                  :first t)))
+             (assert (symbolp (car a)) ((car a))
+                     "Function argument name should only consist of symbols: ~A"
+                     a)
+             (let* ((name (car a))
+                    (type (cadr a))
+                    (temp (to-temp a
+                                   (temp-table graph)
+                                   :source a
+                                   :first t
+                                   :type type)))
                (setf (args graph)
                      (append (args graph)
                              (list temp)))
-               (to-env a temp env))))
+               (to-env name temp env))))
   args)
 
 (defun emit-ret (ret-temp graph)
@@ -158,8 +174,9 @@
 (defun defun-to-ir (expr env)
   (let ((graph (initialize-graph (string-downcase (string (car expr)))))
         (env (expand-env env))
-        (args (cadr expr))
-        (body (cddr expr)))
+        (ret-val (cadr expr))
+        (args (caddr expr))
+        (body (cdddr expr)))
     (args-to-ir args graph env)
     (let ((ret-temp
             (if body
@@ -168,7 +185,12 @@
                       do (setf ret-temp (to-ir e env graph))
                       finally (return ret-temp))
                 (to-temp nil (temp-table graph) :type 'void))))
-      (emit-ret ret-temp graph))
+      (assert (eq (temp-type ret-temp) ret-val) (ret-temp)
+              "Return type ~A, isn't equal to the type specified in the ~
+               function signature: ~A"
+              (temp-type ret-temp) ret-val)
+      (emit-ret ret-temp graph)
+      (setf (ret graph) ret-temp))
     (setf (exit graph) (current graph))
     graph))
 

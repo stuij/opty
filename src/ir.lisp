@@ -140,6 +140,7 @@
 ;; graph
 (defclass flow-graph (digraph)
   ((args       :initarg :args       :accessor args     :initform '())
+   (ret        :initarg :ret        :accessor ret      :initform nil)
    (bb-count   :initarg :bb-counter :accessor bb-count :initform (counter))
    (current    :initarg :current    :accessor current)
    (temp-table :initarg :temp-table :accessor temp-table
@@ -162,7 +163,7 @@
 
 (defun serialize-arg (s arg colon at)
   (declare (ignore colon at))
-  (format s "~A" (name arg)))
+  (format s "(~A ~A)" (name arg) (temp-type arg)))
 
 (defun serialize-arguments (graph s)
   (format s "(")
@@ -199,6 +200,7 @@
 (defun serialize-func (s graph colon at)
   (declare (ignore colon at))
   (format s "(defun ~A " (label graph))
+  (format s "~A " (temp-type (ret graph)))
   (serialize-arguments graph s)
   (serialize-blocks graph s)
   (format s ")"))
