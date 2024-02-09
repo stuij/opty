@@ -26,33 +26,60 @@
 
 (defmacro gen-op-make-fns (op-list)
   `(progn
-     ,@(loop for op in op-list
-             collect (destructuring-bind (opcode res-types op-types) op
-                       (let ((fn-name (make-op-name opcode))
-                             (arity (length op-types)))
-                         `(defun ,fn-name (operands &key results source)
-                            (assert (= (length operands) ,arity) (operands)
-                                    "Expecting ~A operands, ~A were given."
-                                    ,arity (length operands))
-                            (make-instance
-                             'op
-                             :opcode ',opcode
-                             :op-types ',op-types
-                             :res-types ',res-types
-                             :arity ,arity
-                             :source source
-                             :operands operands
-                             :results results)))))))
+     ,@(loop
+         for op in op-list
+         collect
+         (destructuring-bind (opcode res-types op-types) op
+           (let ((fn-name (make-op-name opcode))
+                 (arity (length op-types)))
+             `(defun ,fn-name (operands &key results source
+                                          result-types
+                                          operand-types)
+                (let ((op-types (if operand-types
+                                    operand-types
+                                    ',op-types))
+                      (res-types (if result-types
+                                     result-types
+                                     ',res-types)))
+                  (assert (= (length operands) ,arity) (operands)
+                          "Expecting ~A operands, ~A were given."
+                          ,arity (length operands))
+                  (assert (= (length operands) (length op-types))
+                          (operands op-types)
+                          "Expecting number of operands ~A ~
+                                     to equal number of operand types: ~A"
+                          (length operands) (length op-types))
+                  (loop for op in operands
+                        for type in op-types
+                        do (assert (equalp (temp-type op) type) ()
+                                   "Operand type ~A and expected ~
+                                    type ~A are not equal"
+                                   (temp-type op) type))
+                  (if results
+                      (loop for res in results
+                            for type in res-types
+                            do (assert (equalp (temp-type res) type) ()
+                                   "Result type ~A and expected ~
+                                    type ~A are not equal"
+                                   (temp-type res) type)))
+                  (make-instance 'op
+                                 :opcode ',opcode
+                                 :op-types op-types
+                                 :res-types res-types
+                                 :arity ,arity
+                                 :source source
+                                 :operands operands
+                                 :results results))))))))
 
 ;; list of op-name, result types, operand types
 (gen-op-make-fns
- ((iadd   (i32) (i32 i32))
-  (imul   (i32) (i32 i32))
-  (ilt    (i32) (i32 i32))
-  (icpy   ()    (i32 i32))
-  (jmp    ()    (bb))
-  (ibcond ()    (i32 bb bb))
-  (ret    ()    (union))))
+ ((add   (i32) (i32 i32))
+  (mul   (i32) (i32 i32))
+  (lt    (i32) (i32 i32))
+  (cpy   ()    (union union))
+  (jmp   ()    (bb))
+  (bcond ()    (i32 bb bb))
+  (ret   ()    (union))))
 
 (defun install-op (op graph &optional source)
   "Register op in temp table, and append to current block"
@@ -67,8 +94,11 @@
       (append-op op graph)
       (values ret op))))
 
-(defun emit-op (op args graph &optional source)
-  (install-op (funcall (make-op-name op) args :source source)
+(defun emit-op (op args graph &key source result-types operand-types)
+  (install-op (funcall (make-op-name op) args
+                       :source source
+                       :result-types result-types
+                       :operand-types operand-types)
               graph
               source))
 
@@ -125,16 +155,19 @@
 (defmethod name ((b basic-block))
   (bb-symbol b))
 
-(defun create-bb (graph)
-  (let ((bb (make-instance 'basic-block :id (funcall (bb-count graph)))))
-    (setf (gethash (id bb) (nodes graph))
-          bb)))
-
 (defun bb-symbol (basic-block)
   (make-keyword (bb-name basic-block)))
 
 (defun bb-name (basic-block)
   (format nil "BB-~A" (id basic-block)))
+
+(defmethod temp-type ((b basic-block))
+  'bb)
+
+(defun create-bb (graph)
+  (let ((bb (make-instance 'basic-block :id (funcall (bb-count graph)))))
+    (setf (gethash (id bb) (nodes graph))
+          bb)))
 
 
 ;; graph

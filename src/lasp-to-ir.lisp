@@ -62,16 +62,16 @@
 
 
 (plain-op-to-builtins
- ((+ iadd)
-  (* imul)
-  (<   ilt)))
+ ((+ add)
+  (* mul)
+  (< lt)))
 
 
 ;; parse source language to IR
 (defun plain-op-to-ir (op args expr env graph)
   (let* ((args (loop for expr in args
                      collect (to-ir expr env graph))))
-    (emit-op op args graph expr)))
+    (emit-op op args graph :source expr)))
 
 (defun if-to-ir (args expr env graph)
   (assert (<= (length args) 3) (args)
@@ -82,26 +82,28 @@
       (let* ((bb-true (create-bb graph))
              (bb-false (create-bb graph))
              (bb-cont (create-bb graph))
-             (cond-temp (to-ir cond-form env graph))
-             (ret (new-temp (temp-table graph))))
-        (emit-op 'ibcond (list cond-temp bb-true bb-false) graph expr)
+             (cond-temp (to-ir cond-form env graph)))
+        (emit-op 'bcond (list cond-temp bb-true bb-false) graph :source expr)
         (start-block bb-true graph)
-        (let ((tmp-true (to-ir true-form env graph)))
-          (emit-op 'icpy (list ret tmp-true) graph expr)
-          (emit-op 'jmp (list bb-cont) graph expr)
+        (let* ((tmp-true (to-ir true-form env graph))
+               (ret-type (temp-type tmp-true))
+               (cpy-operand-types (list ret-type ret-type))
+               (ret (new-temp (temp-table graph) ret-type)))
+          (emit-op 'cpy (list ret tmp-true) graph
+                   :source expr
+                   :operand-types cpy-operand-types)
+          (emit-op 'jmp (list bb-cont) graph :source expr)
           (start-block bb-false graph)
           (let ((tmp-false (to-ir false-form env graph)))
-            ;; TODO: fix the result value of if's can only be i32
-            (assert (and (eq (temp-type tmp-true) 'i32)
-                         (eq (temp-type tmp-false) 'i32))
-                    (tmp-true tmp-false)
-                    "`if` argument values aren't equal to i32: ~A, ~A"
-                    tmp-true tmp-false)
-            (setf (temp-type ret) 'i32)
-            (emit-op 'icpy (list ret tmp-false) graph expr)
-          (emit-op 'jmp (list bb-cont) graph expr)))
-        (start-block bb-cont graph)
-        ret)))
+            (assert (eq ret-type (temp-type tmp-false)) ()
+                    "`if` branch return values aren't equal: ~A, ~A"
+                    ret-type (temp-type tmp-false) 'i32)
+            (emit-op 'cpy (list ret tmp-false) graph
+                     :source expr
+                     :operand-types cpy-operand-types))
+          (emit-op 'jmp (list bb-cont) graph :source expr)
+          (start-block bb-cont graph)
+          ret))))
 
 (setf (gethash 'if *builtins*)  #'if-to-ir)
 
@@ -115,19 +117,23 @@
          (bb-cont (create-bb graph))
          ;; code to calc 1st arg is handled in the current block
          (1st-clause-tmp (to-ir (car args) env graph))
-         (ret (new-temp (temp-table graph) (temp-type 1st-clause-tmp))))
-    (emit-op 'icpy (list ret 1st-clause-tmp) graph expr )
-    (emit-op 'ibcond (list 1st-clause-tmp bb-2nd-clause bb-cont) graph expr)
+         (ret-type (temp-type 1st-clause-tmp))
+         (cpy-operand-types (list ret-type ret-type))
+         (ret (new-temp (temp-table graph) ret-type)))
+    (emit-op 'cpy (list ret 1st-clause-tmp) graph
+             :source expr :operand-types cpy-operand-types)
+    (emit-op 'bcond (list 1st-clause-tmp bb-2nd-clause bb-cont) graph :source expr)
     (start-block bb-2nd-clause graph)
     (let ((2nd-clause-tmp (to-ir (cadr args) env graph)))
       (assert (and (eq (temp-type 1st-clause-tmp) 'i32)
                    (eq (temp-type 2nd-clause-tmp) 'i32))
-              (1st-clause-tmp 2nd-clause-tmp)
-              "`and` argument values aren't equal to i32: ~A, ~A"
+              () "`and` argument values aren't equal to i32: ~A, ~A"
               1st-clause-tmp 2nd-clause-tmp)
       (setf (temp-type ret) 'i32)
-      (emit-op 'icpy (list ret 2nd-clause-tmp) graph expr)
-      (emit-op 'jmp (list bb-cont) graph expr))
+      (emit-op 'cpy (list ret 2nd-clause-tmp) graph
+               :source expr
+               :operand-types cpy-operand-types)
+      (emit-op 'jmp (list bb-cont) graph :source expr))
     (start-block bb-cont graph)
     ret))
 
@@ -165,12 +171,6 @@
                (to-env name temp env))))
   args)
 
-(defun emit-ret (ret-temp graph)
-  (multiple-value-bind (_ op) (emit-op 'ret (list ret-temp) graph)
-    (declare (ignore _))
-    (setf (res-types op) (list (temp-type ret-temp)))
-    op))
-
 (defun defun-to-ir (expr env)
   (let ((graph (initialize-graph (string-downcase (string (car expr)))))
         (env (expand-env env))
@@ -189,7 +189,8 @@
               "Return type ~A, isn't equal to the type specified in the ~
                function signature: ~A"
               (temp-type ret-temp) ret-val)
-      (emit-ret ret-temp graph)
+      (emit-op 'ret (list ret-temp) graph
+               :operand-types (list (temp-type ret-temp)))
       (setf (ret graph) ret-temp))
     (setf (exit graph) (current graph))
     graph))
