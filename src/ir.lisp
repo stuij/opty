@@ -34,16 +34,20 @@
                  (arity (length op-types)))
              `(defun ,fn-name (operands &key results source
                                           result-types
-                                          operand-types)
-                (let ((op-types (if operand-types
+                                          operand-types
+                                          arity)
+                (let ((arity (if arity
+                                 arity
+                                 ,arity))
+                      (op-types (if operand-types
                                     operand-types
                                     ',op-types))
                       (res-types (if result-types
                                      result-types
                                      ',res-types)))
-                  (assert (= (length operands) ,arity) (operands)
+                  (assert (= (length operands) arity) (operands)
                           "Expecting ~A operands, ~A were given."
-                          ,arity (length operands))
+                          arity (length operands))
                   (assert (= (length operands) (length op-types))
                           (operands op-types)
                           "Expecting number of operands ~A ~
@@ -66,42 +70,80 @@
                                  :opcode ',opcode
                                  :op-types op-types
                                  :res-types res-types
-                                 :arity ,arity
+                                 :arity arity
                                  :source source
                                  :operands operands
                                  :results results))))))))
 
 ;; list of op-name, result types, operand types
 (gen-op-make-fns
- ((add   (i32) (i32 i32))
-  (mul   (i32) (i32 i32))
-  (lt    (i32) (i32 i32))
-  (cpy   ()    (union union))
-  (jmp   ()    (bb))
-  (bcond ()    (i32 bb bb))
-  (ret   ()    (union))))
+ ((add    (i32) (i32 i32))
+  (mul    (i32) (i32 i32))
+  (lt     (i32) (i32 i32))
+  (cpy    ()    (union union))
+  (jmp    ()    (bb))
+  (bcond  ()    (i32 bb bb))
+  (ret    ()    (union))
+  (elem   (ptr) (ptr i32)) ;; argument numbers can vary as per array dimensions
+))
 
-(defun install-op (op graph &optional source)
+(defun install-op (op graph &key source type-info)
   "Register op in temp table, and append to current block"
   (with-slots (opcode operands res-types) op
     (let* ((op-ident (op-to-ident opcode operands))
            (ret (if res-types
                     (to-temp op-ident (temp-table graph)
                              :source source
-                             :type (op-result-type op)))))
+                             :type (op-result-type op)
+                             :type-info type-info))))
       (if res-types
           (setf (results op) (list ret)))
       (append-op op graph)
       (values ret op))))
 
-(defun emit-op (op args graph &key source result-types operand-types)
+(defun emit-op (op args graph
+                &key source result-types operand-types type-info arity)
   (install-op (funcall (make-op-name op) args
                        :source source
                        :result-types result-types
-                       :operand-types operand-types)
+                       :operand-types operand-types
+                       :arity arity)
               graph
-              source))
+              :source source
+              :type-info type-info))
 
+;; types
+(defclass type-info ()
+  ((temp-type :initarg :temp-type :accessor temp-type)))
+
+(defclass pointer-info (type-info)
+  ((pointee-type :initarg :pointee-type :accessor pointee-type)))
+
+(defmethod print-ptr-type ((poi pointer-info))
+  (format nil "~A" (pointee-type poi)))
+
+(defclass array-info (pointer-info)
+  ((pointee-type :initform 'arr)
+   (dimensions   :initarg :dimensions :accessor dimensions)
+   (arr-type     :initarg :arr-type   :accessor arr-type)
+   (ptr-offset   :initarg :ptr-offset :accessor ptr-offset)))
+
+(defmethod print-ptr-type ((arr array-info))
+  (with-slots (dimensions arr-type) arr
+      (format nil "(arr ~A ~A)" arr-type dimensions)))
+
+(defun make-array-info (type dimensions offset)
+  (make-instance 'array-info
+                 :arr-type type
+                 :dimensions dimensions
+                 :ptr-offset offset))
+
+(defmethod name ((n number))
+  n)
+
+(defmethod print-ir ((n number) &key typep)
+  (declare (ignore typep))
+  (format nil "~A" n))
 
 ;; temps
 ;; we store IR temporaries in the graph/global temp table
@@ -109,7 +151,9 @@
   ((name      :initarg :name      :reader   name)
    (op-ident  :initarg :op-ident  :reader   op-ident :initform nil)
    (source    :initarg :source    :reader   source :initform nil)
-   (temp-type :initarg :temp-type :accessor temp-type)))
+   (temp-type :initarg :temp-type :accessor temp-type)
+   (realm     :initarg :realm     :accessor realm)
+   (type-info :initarg :type-info :accessor type-info :initform nil)))
 
 (defclass temp-table ()
   ((table :initarg :table :accessor table :initform (make-hash-table :test 'equalp))
@@ -119,7 +163,7 @@
 (defun gen-temp-name (temp-table)
   (format-symbol t "TMP-~S" (funcall (temp-count temp-table))))
 
-(defun to-temp (op-ident temp-table &key source type name first)
+(defun to-temp (op-ident temp-table &key source type name first type-info)
   (with-slots (table temps) temp-table
     (if-let (temp (gethash op-ident table))
       (if first
@@ -130,15 +174,27 @@
                          (make-instance 'temp :name temp-name
                                               :op-ident op-ident
                                               :source source
-                                              :temp-type type))))
+                                              :temp-type type
+                                              :type-info type-info))))
         (setf (gethash temp-name temps)
               temp)))))
 
-(defun new-temp (temp-table &optional type)
+(defmethod print-type ((tmp temp))
+  (if (eq (temp-type tmp) 'ptr)
+      (format nil "(ptr ~A)" (print-ptr-type (type-info tmp)))
+      (format nil "~A" (temp-type tmp))))
+
+(defmethod print-ir ((tmp temp) &key typep)
+  (if typep
+      (format nil "(~A ~A)" (name tmp) (print-type tmp))
+      (format nil "~A" (name tmp))))
+
+(defun new-temp (temp-table &key type type-info)
   "Usually used for compiler-generated temps."
   (let* ((name (gen-temp-name temp-table))
          (temp (make-instance 'temp :name name
-                                   :temp-type type)))
+                                    :temp-type type
+                                    :type-info type-info)))
     (setf (gethash name (temps temp-table))
           temp)))
 
@@ -152,8 +208,8 @@
 (defclass basic-block (classify-node)
   ((instrs :initarg :instrs :accessor instrs :initform '())))
 
-(defmethod name ((b basic-block))
-  (bb-symbol b))
+(defmethod name ((bb basic-block))
+  (bb-symbol bb))
 
 (defun bb-symbol (basic-block)
   (make-keyword (bb-name basic-block)))
@@ -161,7 +217,7 @@
 (defun bb-name (basic-block)
   (format nil "BB-~A" (id basic-block)))
 
-(defmethod temp-type ((b basic-block))
+(defmethod temp-type ((bb basic-block))
   'bb)
 
 (defun create-bb (graph)
@@ -169,6 +225,9 @@
     (setf (gethash (id bb) (nodes graph))
           bb)))
 
+(defmethod print-ir ((bb basic-block) &key typep)
+  (declare (ignore typep))
+  (format nil ":~A" (bb-symbol bb)))
 
 ;; graph
 (defclass flow-graph (digraph)
@@ -196,44 +255,44 @@
 
 (defun serialize-arg (s arg colon at)
   (declare (ignore colon at))
-  (format s "(~A ~A)" (name arg) (temp-type arg)))
+  (format s "~A" (print-ir arg :typep t)))
 
 (defun serialize-arguments (graph s)
   (format s "(")
   (format s "~{~/opty:serialize-arg/~^ ~}" (args graph))
-  (format s ")~%"))
+  (format s ")"))
 
 (defun serialize-op (op s)
   (let* ((opcode (opcode op))
          (operands (loop for o in (operands op)
-                         collect (name o)))
+                         collect (print-ir o :typep nil)))
          (results (loop for r in (results op)
-                        collect (if r (name r))))
+                        collect (if r (print-ir r :typep t))))
          (source (source op))
          ;; TODO: make some kind of regex to strip and replace whitespace
          (one-line-source (replace-all (substitute #\space #\newline
                                                    (format nil "~A" source))
                                        "    " "")))
     (if results
-        (format s "    (~A ~{~A~^ ~} ~{~A~^ ~})"
+        (format s "~%    (~A ~{~A~^ ~} ~{~A~^ ~})"
                 opcode results operands)
-        (format s "    (~A ~{~A~^ ~})"
+        (format s "~%    (~A ~{~A~^ ~})"
                 opcode operands))
     (if (and source *print-source*)
-        (format s " ;; ~A~%" one-line-source)
-        (format s "~%"))))
+        (format s " ;; ~A" one-line-source)
+        (format s ""))))
 
 (defun serialize-blocks (graph s)
   (loop for node being the hash-value of (nodes graph)
         do (progn
-             (format s "  :~A~%"(bb-symbol node))
+             (format s "~%  ~A" (print-ir node))
              (loop for op in (instrs node)
                    do (serialize-op op s)))))
 
 (defun serialize-func (s graph colon at)
   (declare (ignore colon at))
   (format s "(defun ~A " (label graph))
-  (format s "~A " (temp-type (ret graph)))
+  (format s "~A " (print-type (ret graph)))
   (serialize-arguments graph s)
   (serialize-blocks graph s)
   (format s ")"))

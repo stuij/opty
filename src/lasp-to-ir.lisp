@@ -88,7 +88,7 @@
         (let* ((tmp-true (to-ir true-form env graph))
                (ret-type (temp-type tmp-true))
                (cpy-operand-types (list ret-type ret-type))
-               (ret (new-temp (temp-table graph) ret-type)))
+               (ret (new-temp (temp-table graph) :type ret-type)))
           (emit-op 'cpy (list ret tmp-true) graph
                    :source expr
                    :operand-types cpy-operand-types)
@@ -107,6 +107,26 @@
 
 (setf (gethash 'if *builtins*)  #'if-to-ir)
 
+(defun aref-to-ir (args expr env graph)
+  (let* ((arr (to-ir (car args) env graph))
+         (indices (loop for i in (cdr args)
+                        collect (to-ir i env graph)))
+         ;; pointer type decays to element type of the array
+         (ret-type-info (make-instance 'pointer-info
+                                       :pointee-type (arr-type (type-info arr)))))
+    (assert (= (ptr-offset (type-info arr)) 0) ()
+            "The offset of ptr into aref'ed array should be known and 0: ~A"
+            (ptr-offset (type-info arr)))
+    (emit-op 'elem (append (list arr) indices) graph
+             :source expr
+             :operand-types (append (list 'ptr)
+                                    (loop for i in indices
+                                          collect (temp-type i)))
+             :type-info ret-type-info
+             :arity (+ (length indices) 1))))
+
+(setf (gethash 'aref *builtins*)  #'aref-to-ir)
+
 ;; Very similar to if expression, but as we don't need to evaluate a body.
 ;; I hope we can get away with not branching to a new bb for the 1st clause,
 ;; and optimizing out the double ret assignment to a phi node later on.
@@ -119,7 +139,7 @@
          (1st-clause-tmp (to-ir (car args) env graph))
          (ret-type (temp-type 1st-clause-tmp))
          (cpy-operand-types (list ret-type ret-type))
-         (ret (new-temp (temp-table graph) ret-type)))
+         (ret (new-temp (temp-table graph) :type ret-type)))
     (emit-op 'cpy (list ret 1st-clause-tmp) graph
              :source expr :operand-types cpy-operand-types)
     (emit-op 'bcond (list 1st-clause-tmp bb-2nd-clause bb-cont) graph :source expr)
@@ -152,19 +172,30 @@
 
 (defun args-to-ir (args graph env)
   (assert (= (length args) (length (remove-duplicates args)))
-            (args) "Function argument list contains duplicates: ~A" args)
+          (args) "Function argument list contains duplicates: ~A" args)
   (loop for a in args
         do (progn
              (assert (symbolp (car a)) ((car a))
                      "Function argument name should only consist of symbols: ~A"
                      a)
              (let* ((name (car a))
-                    (type (cadr a))
+                    (type-expr (cadr a))
+                    (type (if (atom type-expr)
+                              type-expr
+                              (if (eq (car type-expr) 'arr)
+                                  'ptr
+                                  (error "Unknown compound function argument: ~A"
+                                         type-expr))))
+                    (type-info (if (and (listp type-expr) (eq (car type-expr) 'arr))
+                                   (make-array-info (cadr type-expr)
+                                                    (caddr type-expr)
+                                                    0)))
                     (temp (to-temp a
                                    (temp-table graph)
                                    :source a
                                    :first t
-                                   :type type)))
+                                   :type type
+                                   :type-info type-info)))
                (setf (args graph)
                      (append (args graph)
                              (list temp)))
