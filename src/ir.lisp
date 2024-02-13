@@ -161,7 +161,7 @@
    (temp-count :initarg :temp-count :accessor temp-count :initform (counter))))
 
 (defun gen-temp-name (temp-table)
-  (format-symbol t "TMP-~S" (funcall (temp-count temp-table))))
+  (format-symbol t "%~S" (funcall (temp-count temp-table))))
 
 (defun to-temp (op-ident temp-table &key source type name first type-info)
   (with-slots (table temps) temp-table
