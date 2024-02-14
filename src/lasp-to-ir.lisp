@@ -87,20 +87,24 @@
         (start-block bb-true graph)
         (let* ((tmp-true (to-ir true-form env graph))
                (ret-type (temp-type tmp-true))
-               (cpy-operand-types (list ret-type ret-type))
+               (cpy-type-list (list ret-type))
                (ret (new-temp (temp-table graph) :type ret-type)))
-          (emit-op 'cpy (list ret tmp-true) graph
+          (emit-op 'cpy (list tmp-true) graph
                    :source expr
-                   :operand-types cpy-operand-types)
+                   :operand-types cpy-type-list
+                   :result-types cpy-type-list
+                   :results (list ret))
           (emit-op 'jmp (list bb-cont) graph :source expr)
           (start-block bb-false graph)
           (let ((tmp-false (to-ir false-form env graph)))
             (assert (eq ret-type (temp-type tmp-false)) ()
                     "`if` branch return values aren't equal: ~A, ~A"
                     ret-type (temp-type tmp-false) 'i32)
-            (emit-op 'cpy (list ret tmp-false) graph
+            (emit-op 'cpy (list tmp-false) graph
                      :source expr
-                     :operand-types cpy-operand-types))
+                     :operand-types cpy-type-list
+                     :result-types cpy-type-list
+                     :results (list ret)))
           (emit-op 'jmp (list bb-cont) graph :source expr)
           (start-block bb-cont graph)
           ret))))
@@ -138,10 +142,13 @@
          ;; code to calc 1st arg is handled in the current block
          (1st-clause-tmp (to-ir (car args) env graph))
          (ret-type (temp-type 1st-clause-tmp))
-         (cpy-operand-types (list ret-type ret-type))
+         (cpy-type-list (list ret-type))
          (ret (new-temp (temp-table graph) :type ret-type)))
-    (emit-op 'cpy (list ret 1st-clause-tmp) graph
-             :source expr :operand-types cpy-operand-types)
+    (emit-op 'cpy (list 1st-clause-tmp) graph
+             :source expr
+             :operand-types cpy-type-list
+             :result-types cpy-type-list
+             :results (list ret))
     (emit-op 'bcond (list 1st-clause-tmp bb-2nd-clause bb-cont) graph :source expr)
     (start-block bb-2nd-clause graph)
     (let ((2nd-clause-tmp (to-ir (cadr args) env graph)))
@@ -150,9 +157,11 @@
               () "`and` argument values aren't equal to i32: ~A, ~A"
               1st-clause-tmp 2nd-clause-tmp)
       (setf (temp-type ret) 'i32)
-      (emit-op 'cpy (list ret 2nd-clause-tmp) graph
+      (emit-op 'cpy (list 2nd-clause-tmp) graph
                :source expr
-               :operand-types cpy-operand-types)
+               :operand-types cpy-type-list
+               :result-types cpy-type-list
+               :results (list ret))
       (emit-op 'jmp (list bb-cont) graph :source expr))
     (start-block bb-cont graph)
     ret))

@@ -77,37 +77,40 @@
 
 ;; list of op-name, result types, operand types
 (gen-op-make-fns
- ((add    (i32) (i32 i32))
-  (mul    (i32) (i32 i32))
-  (lt     (i32) (i32 i32))
-  (cpy    ()    (union union))
-  (jmp    ()    (bb))
-  (bcond  ()    (i32 bb bb))
-  (ret    ()    (union))
-  (elem   (ptr) (ptr i32)) ;; argument numbers can vary as per array dimensions
+ ((add    (i32)   (i32 i32))
+  (mul    (i32)   (i32 i32))
+  (lt     (i32)   (i32 i32))
+  (cpy    (union) (union))
+  (jmp    ()      (bb))
+  (bcond  ()      (i32 bb bb))
+  (ret    ()      (union))
+  (elem   (ptr)   (ptr i32)) ;; argument numbers can vary as per array dimensions
 ))
 
 (defun install-op (op graph &key source type-info)
   "Register op in temp table, and append to current block"
-  (with-slots (opcode operands res-types) op
+  (with-slots (opcode operands res-types results) op
     (let* ((op-ident (op-to-ident opcode operands))
-           (ret (if res-types
+           (needs-result (and res-types (not results)))
+           (ret (if needs-result
                     (to-temp op-ident (temp-table graph)
                              :source source
                              :type (op-result-type op)
                              :type-info type-info))))
-      (if res-types
-          (setf (results op) (list ret)))
+      (if needs-result
+          (setf results (list ret)))
       (append-op op graph)
       (values ret op))))
 
 (defun emit-op (op args graph
-                &key source result-types operand-types type-info arity)
+                &key source result-types operand-types
+                  type-info arity results)
   (install-op (funcall (make-op-name op) args
                        :source source
                        :result-types result-types
                        :operand-types operand-types
-                       :arity arity)
+                       :arity arity
+                       :results results)
               graph
               :source source
               :type-info type-info))
