@@ -169,16 +169,38 @@
 
 (setf (gethash 'and *builtins*)  #'and-to-ir)
 
+(defun number-to-ir (nr env graph)
+  (assert (integerp nr) ()
+          "Immediate isn't an integer: ~A" nr)
+  (emit-op 'ldi (list nr) graph :source nr))
+
 (defun to-ir (expr env graph)
   (if (atom expr)
-      (if-let (var (lookup expr env))
-        (temp var)
-        (error "Var not found in environment: ~A" expr))
+      (cond ((numberp expr)
+             (number-to-ir expr env graph))
+            (t
+             (if-let (var (lookup expr env))
+               (temp var)
+               (error "Var not found in environment: ~A" expr))))
       (let ((thing (car expr)))
         (if-let (handler (gethash thing *builtins*))
           (funcall handler (cdr expr) expr env graph)
           ;; TODO: check function environment
           (error "Op not supported yet: ~S" thing)))))
+
+(defun get-fn-arg-array-info (type-spec env)
+  (let* ((type (cadr type-spec))
+         (dimensions
+           (loop for i in (caddr type-spec)
+                 collect (if (integerp i)
+                             i
+                             (if-let (val (lookup i env))
+                               (temp val)
+                               (error "array index isn't a known value or ~
+                               integer: ~A" i))))))
+    (make-instance 'array-info
+                   :arr-type type
+                   :dimensions dimensions)))
 
 (defun args-to-ir (args graph env)
   (assert (= (length args) (length (remove-duplicates args)))
@@ -197,9 +219,7 @@
                                   (error "Unknown compound function argument: ~A"
                                          type-expr))))
                     (type-info (if (and (listp type-expr) (eq (car type-expr) 'arr))
-                                   (make-array-info (cadr type-expr)
-                                                    (caddr type-expr)
-                                                    0)))
+                                   (get-fn-arg-array-info type-expr env)))
                     (temp (to-temp a
                                    (temp-table graph)
                                    :source a
