@@ -115,19 +115,20 @@
   (let* ((arr (to-ir (car args) env graph))
          (indices (loop for i in (cdr args)
                         collect (to-ir i env graph)))
+         (operand-types (append (list 'ptr)
+                                (loop for i in indices
+                                      collect (temp-type i))))
          ;; pointer type decays to element type of the array
          (ret-type-info (make-instance 'pointer-info
                                        :pointee-type (arr-type (type-info arr)))))
-    (assert (= (ptr-offset (type-info arr)) 0) ()
-            "The offset of ptr into aref'ed array should be known and 0: ~A"
-            (ptr-offset (type-info arr)))
+    (assert (eql (pointee-type (type-info arr)) 'arr) ()
+            "The pointee type isn't an array: ~A"
+            (pointee-type (type-info arr)))
     (emit-op 'elem (append (list arr) indices) graph
              :source expr
-             :operand-types (append (list 'ptr)
-                                    (loop for i in indices
-                                          collect (temp-type i)))
+             :operand-types operand-types
              :type-info ret-type-info
-             :arity (+ (length indices) 1))))
+             :arity (1+ (length (dimensions (type-info arr)))))))
 
 (setf (gethash 'aref *builtins*)  #'aref-to-ir)
 

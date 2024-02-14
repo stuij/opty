@@ -25,7 +25,25 @@
 (defun if-it i32 ((a i32) (b i32) (c i32))
   (if (< a b) (+ b c) c))
 
-(defun arr-index ptr ((an-arr (arr i32 (2 2)))
+;; check simple immediate
+(defun add-two i32 ((a i32))
+  (+ a 2))
+
+;; check array argument specification and array access
+;; (two dimensional)
+(defun arr-2x ptr ((an-arr (arr i32 (2 2)))
                       (row i32)
                       (col i32))
+  (aref an-arr row col))
+
+;; check array argument specification and array access
+;; (one dimensional)
+(defun arr-1x ptr ((an-arr (arr i32 (2)))
+                      (col i32))
+  (aref an-arr col))
+
+;; check fn argument value in array dimensions
+(defun arr-val-index ptr ((n i32) (an-arr (arr i32 (n 2)))
+                          (row i32)
+                          (col i32))
   (aref an-arr row col))

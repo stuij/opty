@@ -85,7 +85,7 @@
   (bcond  ()      (i32 bb bb))
   (ret    ()      (union))
   (elem   (ptr)   (ptr i32)) ;; argument numbers can vary as per array dimensions
-))
+  (ldi    (i32)   (imm))))
 
 (defun install-op (op graph &key source type-info)
   "Register op in temp table, and append to current block"
@@ -128,21 +128,22 @@
 (defclass array-info (pointer-info)
   ((pointee-type :initform 'arr)
    (dimensions   :initarg :dimensions :accessor dimensions)
-   (arr-type     :initarg :arr-type   :accessor arr-type)
-   (ptr-offset   :initarg :ptr-offset :accessor ptr-offset)))
+   (arr-type     :initarg :arr-type   :accessor arr-type)))
 
 (defmethod print-ptr-type ((arr array-info))
-  (with-slots (dimensions arr-type) arr
-      (format nil "(arr ~A ~A)" arr-type dimensions)))
-
-(defun make-array-info (type dimensions offset)
-  (make-instance 'array-info
-                 :arr-type type
-                 :dimensions dimensions
-                 :ptr-offset offset))
+  (with-slots (pointee-type dimensions arr-type) arr
+    (let ((index-names (loop for i in dimensions
+                             collect (if (integerp i)
+                                         i
+                                         (print-ir i :typep nil)))))
+      (format nil "(~A ~A (~{~A~^ ~}))"
+              pointee-type arr-type index-names))))
 
 (defmethod name ((n number))
   n)
+
+(defmethod temp-type ((n number))
+  'imm)
 
 (defmethod print-ir ((n number) &key typep)
   (declare (ignore typep))
@@ -184,7 +185,7 @@
 
 (defmethod print-type ((tmp temp))
   (if (eq (temp-type tmp) 'ptr)
-      (format nil "(ptr ~A)" (print-ptr-type (type-info tmp)))
+      (format nil "(~A ~A)" 'ptr (print-ptr-type (type-info tmp)))
       (format nil "~A" (temp-type tmp))))
 
 (defmethod print-ir ((tmp temp) &key typep)
@@ -268,7 +269,7 @@
 (defun serialize-op (op s)
   (let* ((opcode (opcode op))
          (operands (loop for o in (operands op)
-                         collect (print-ir o :typep nil)))
+                         collect (print-ir o :typep t)))
          (results (loop for r in (results op)
                         collect (if r (print-ir r :typep t))))
          (source (source op))
