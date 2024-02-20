@@ -47,3 +47,11 @@
                           (row i32)
                           (col i32))
   (aref an-arr row col))
+
+;; lexically scoped variables
+(defun let-it-be i32 ((a i32))
+  (let* ((i 3)
+         (j (+ 1 (let* ((i i)
+                        (j (+ i a)))
+                   j))))
+    j))

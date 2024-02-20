@@ -24,17 +24,18 @@
                     (list child)))
       child)))
 
-(defun lookup (var env)
+(defun lookup (var env &key (lookup-parents t))
   (if (gethash var (vars env))
       (gethash var (vars env))
-      (if (parent env)
-          (lookup var (parent env)))))
+      (if (and lookup-parents (parent env))
+          (lookup var (parent env) :lookup-parents t))))
 
 (defun make-env ()
   (make-instance 'env))
 
-(defun to-env (var temp env &optional type)
-  (assert (not (lookup var env)) (var) "Var ~S is already present in env." var)
+(defun to-env (var temp env &key type (lookup-parents t))
+  (assert (not (lookup var env :lookup-parents lookup-parents)) (var)
+          "Var ~S is already present in env." var)
   (let ((instance (make-instance 'var
                             :name var
                             :env-id (id env)
@@ -79,35 +80,35 @@
   (assert (> (length args) 1) (args)
           "`if` needs at least a condition and a clause: ~A" args)
   (destructuring-bind (cond-form true-form false-form) args
-      (let* ((bb-true (create-bb graph))
-             (bb-false (create-bb graph))
-             (bb-cont (create-bb graph))
-             (cond-temp (to-ir cond-form env graph)))
-        (emit-op 'bcond (list cond-temp bb-true bb-false) graph :source expr)
-        (start-block bb-true graph)
-        (let* ((tmp-true (to-ir true-form env graph))
-               (ret-type (temp-type tmp-true))
-               (cpy-type-list (list ret-type))
-               (ret (new-temp (temp-table graph) :type ret-type)))
-          (emit-op 'cpy (list tmp-true) graph
+    (let* ((bb-true (create-bb graph))
+           (bb-false (create-bb graph))
+           (bb-cont (create-bb graph))
+           (cond-temp (to-ir cond-form env graph)))
+      (emit-op 'bcond (list cond-temp bb-true bb-false) graph :source expr)
+      (start-block bb-true graph)
+      (let* ((tmp-true (to-ir true-form env graph))
+             (ret-type (temp-type tmp-true))
+             (cpy-type-list (list ret-type))
+             (ret (new-temp (temp-table graph) :type ret-type)))
+        (emit-op 'cpy (list tmp-true) graph
+                 :source expr
+                 :operand-types cpy-type-list
+                 :result-types cpy-type-list
+                 :results (list ret))
+        (emit-op 'jmp (list bb-cont) graph :source expr)
+        (start-block bb-false graph)
+        (let ((tmp-false (to-ir false-form env graph)))
+          (assert (eq ret-type (temp-type tmp-false)) ()
+                  "`if` branch return values aren't equal: ~A, ~A"
+                  ret-type (temp-type tmp-false) 'i32)
+          (emit-op 'cpy (list tmp-false) graph
                    :source expr
                    :operand-types cpy-type-list
                    :result-types cpy-type-list
-                   :results (list ret))
-          (emit-op 'jmp (list bb-cont) graph :source expr)
-          (start-block bb-false graph)
-          (let ((tmp-false (to-ir false-form env graph)))
-            (assert (eq ret-type (temp-type tmp-false)) ()
-                    "`if` branch return values aren't equal: ~A, ~A"
-                    ret-type (temp-type tmp-false) 'i32)
-            (emit-op 'cpy (list tmp-false) graph
-                     :source expr
-                     :operand-types cpy-type-list
-                     :result-types cpy-type-list
-                     :results (list ret)))
-          (emit-op 'jmp (list bb-cont) graph :source expr)
-          (start-block bb-cont graph)
-          ret))))
+                   :results (list ret)))
+        (emit-op 'jmp (list bb-cont) graph :source expr)
+        (start-block bb-cont graph)
+        ret))))
 
 (setf (gethash 'if *builtins*)  #'if-to-ir)
 
@@ -169,15 +170,39 @@
 
 (setf (gethash 'and *builtins*)  #'and-to-ir)
 
-(defun number-to-ir (nr env graph)
+(defun number-to-ir (nr graph)
   (assert (integerp nr) ()
           "Immediate isn't an integer: ~A" nr)
   (emit-op 'ldi (list nr) graph :source nr))
 
+(defun handle-var-form (form env graph)
+  (assert (symbolp (car form)) ()
+          "Let form variable should be just a symbol: ~A" (car form))
+  (let ((tmp (to-ir (cadr form) env graph)))
+    (to-env (car form) tmp env :type (temp-type tmp) :lookup-parents nil)))
+
+(defun body-to-ir (body env graph)
+  (loop with ret = nil
+        for e in body
+        do (setf ret (to-ir e env graph))
+        finally (return ret)))
+
+;; Like Common Lisp's let*
+(defun let-to-ir (forms expr env graph)
+  (declare (ignore expr))
+  (let* ((child-env (expand-env env))
+         (var-forms (car forms))
+         (body (cdr forms)))
+    (loop for form in var-forms
+          do (handle-var-form form child-env graph))
+    (body-to-ir body child-env graph)))
+
+(setf (gethash 'let* *builtins*)  #'let-to-ir)
+
 (defun to-ir (expr env graph)
   (if (atom expr)
       (cond ((numberp expr)
-             (number-to-ir expr env graph))
+             (number-to-ir expr graph))
             (t
              (if-let (var (lookup expr env))
                (temp var)
@@ -229,7 +254,7 @@
                (setf (args graph)
                      (append (args graph)
                              (list temp)))
-               (to-env name temp env))))
+               (to-env name temp env :type type))))
   args)
 
 (defun defun-to-ir (expr env)
@@ -241,10 +266,7 @@
     (args-to-ir args graph env)
     (let ((ret-temp
             (if body
-                (loop with ret-temp = nil
-                      for e in body
-                      do (setf ret-temp (to-ir e env graph))
-                      finally (return ret-temp))
+                (body-to-ir body env graph)
                 (to-temp nil (temp-table graph) :type 'void))))
       (assert (eq (temp-type ret-temp) ret-val) (ret-temp)
               "Return type ~A, isn't equal to the type specified in the ~
