@@ -209,6 +209,90 @@
 
 (setf (gethash 'let* *builtins*)  #'let-to-ir)
 
+;; Like Common Lisp's do*.
+;; As it's a bit of a complex construction, here's the breakdown:
+;; (do ((<var1> <var1-initial-value> <var1-step>)
+;;      (<var2> <var2-initial-value> <var2-step>)
+;;      ...)
+;;     ((<exit-condition>)
+;;      (<final-statement1>)
+;;      (<final-statement2>)
+;;      ...)
+;;   (<action1-during-loop>)
+;;   (<action2-during-loop>)
+;;   ...))
+;;
+;; This should translate into:
+;; - initialize variables and add them to environment <- current block
+;; - do an initial check for the exit condition before we enter the loop
+;; - enter the loop <- start block
+;;   - evaluate the body
+;;   - evaluate exit condition
+;;   - when exit-condition == t, exit the loop
+;;   - execute final statements <- post-loop block
+;;
+;; the loop should be able to be returned from with an optional form to evaluate:
+;; (return ...)
+;; TODO: break stack
+(defun do*-to-ir (forms expr env graph)
+  (declare (ignore expr))
+  (let* ((child-env (expand-env env))
+         ;; split out forms by function
+         (var-specs (car forms))
+         (exit-condition (caadr forms))
+         (final-forms (cdadr forms))
+         (body (cddr forms))
+         ;; generate code for initial check and entering the loop
+         (bb-loop (create-bb graph))
+         (bb-cont (create-bb graph)))
+    (multiple-value-bind (var-tmps step-forms)
+        ;; we generate code for var initialization, and we need to collect the
+        ;; result tmps as they need to be copied into by the step forms,
+        ;; which we also collect here
+        (loop with var-tmps = '()
+              with step-forms = '()
+              for spec in var-specs
+              do (progn
+                   (setf var-tmps
+                         (append var-tmps
+                                 (list (handle-var-form
+                                        (subseq spec 0 2)
+                                        child-env graph))))
+                   (setf step-forms (append step-forms (list (caddr spec)))))
+              finally (return (values var-tmps step-forms)))
+      (print var-tmps)
+      (let ((exit-tmp (to-ir exit-condition child-env graph)))
+        (emit-op 'bcond (list exit-tmp bb-cont bb-loop) graph :source exit-condition))
+      ;; emit body forms
+      (start-block bb-loop graph)
+      (body-to-ir body child-env graph)
+      ;; we now update the variables we collected with the step forms we collected
+      (loop for var in var-tmps
+            for step in step-forms
+            do (if step
+                   (let* ((step-tmp (to-ir step child-env graph))
+                          (step-type (temp-type step-tmp))
+                          (var-tmp (temp var))
+                          (var-type (temp-type var-tmp)))
+                     (assert (equalp step-type var-type) ()
+                             "Var type `~A` and step type `~A` are not the same."
+                             step-type var-type)
+                     (emit-op 'cpy (list step-tmp) graph
+                              :source step
+                              :operand-types (list step-type)
+                              :result-types (list var-type)
+                              :results (list var-tmp)))))
+      ;; check for loop exit condition and execute final forms
+      (let ((exit-tmp (to-ir exit-condition child-env graph)))
+        (emit-op 'bcond (list exit-tmp bb-cont bb-loop) graph :source exit-condition))
+      (start-block bb-cont graph)
+      (loop with ret = nil
+            for form in final-forms
+            do (setf ret (to-ir form child-env graph))
+            finally (return ret)))))
+
+(setf (gethash 'do* *builtins*)  #'do*-to-ir)
+
 (defun to-ir (expr env graph)
   (if (atom expr)
       (cond ((numberp expr)

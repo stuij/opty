@@ -55,3 +55,12 @@
                         (j (+ i a)))
                    j))))
     j))
+
+;; do* loop
+(defun do*-factorial i32 ((times i32))
+  (do* ((nth 0 (+ n1 n2))
+        (n1  0 n2)
+        (n2  1 nth)
+        (count 0 (+ count 1)))
+       ((< times count)
+        nth)))
