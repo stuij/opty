@@ -178,8 +178,19 @@
 (defun handle-var-form (form env graph)
   (assert (symbolp (car form)) ()
           "Let form variable should be just a symbol: ~A" (car form))
-  (let ((tmp (to-ir (cadr form) env graph)))
-    (to-env (car form) tmp env :type (temp-type tmp) :lookup-parents nil)))
+  (let* ((assign-tmp (to-ir (cadr form) env graph))
+         (assign-type (temp-type assign-tmp))
+         (var-tmp (new-temp (temp-table graph) :type assign-type)))
+    (emit-op 'cpy (list assign-tmp) graph
+             :source form
+             :operand-types (list assign-type)
+             :result-types (list assign-type)
+             :results (list var-tmp))
+    (to-env (car form) var-tmp env :type assign-type :lookup-parents nil)))
+
+(defun handle-var-forms (var-forms env graph)
+  (loop for form in var-forms
+        do (handle-var-form form env graph)))
 
 (defun body-to-ir (body env graph)
   (loop with ret = nil
@@ -193,8 +204,7 @@
   (let* ((child-env (expand-env env))
          (var-forms (car forms))
          (body (cdr forms)))
-    (loop for form in var-forms
-          do (handle-var-form form child-env graph))
+    (handle-var-forms var-forms child-env graph)
     (body-to-ir body child-env graph)))
 
 (setf (gethash 'let* *builtins*)  #'let-to-ir)
