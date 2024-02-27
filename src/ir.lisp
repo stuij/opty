@@ -302,7 +302,8 @@
   (format s ")"))
 
 (defun serialize-ir (ir s)
-  (format s "~{~/opty:serialize-func/~^~%~%~}" ir))
+  (let ((*print-case* :downcase))
+    (format s "~{~/opty:serialize-func/~^~%~%~}" ir)))
 
 (defun serialize-ir-to-string (ir)
   "as opposed to say a file"
