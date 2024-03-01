@@ -85,7 +85,9 @@
   (bcond  ()      (i32 bb bb))
   (ret    ()      (union))
   (elem   (ptr)   (ptr i32)) ;; argument numbers can vary as per array dimensions
-  (ldi    (i32)   (imm))))
+  (ldi    (i32)   (imm))
+  (ldr    (i32)   (ptr))
+  (str    ()      (i32 ptr))))
 
 (defun install-op (op graph &key source type-info)
   "Register op in temp table, and append to current block"

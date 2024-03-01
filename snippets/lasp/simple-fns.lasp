@@ -34,19 +34,31 @@
 (defun arr-2x ptr ((an-arr (arr i32 (2 2)))
                       (row i32)
                       (col i32))
-  (aref an-arr row col))
+  (aloc an-arr row col))
 
 ;; check array argument specification and array access
 ;; (one dimensional)
 (defun arr-1x ptr ((an-arr (arr i32 (2)))
                       (col i32))
-  (aref an-arr col))
+  (aloc an-arr col))
 
 ;; check fn argument value in array dimensions
-(defun arr-val-index ptr ((n i32) (an-arr (arr i32 (n 2)))
+(defun arr-ptr-index ptr ((n i32) (an-arr (arr i32 (n 2)))
+                          (row i32)
+                          (col i32))
+  (aloc an-arr row col))
+
+;; check fn argument value in array dimensions
+(defun arr-val-index i32 ((n i32) (an-arr (arr i32 (n 2)))
                           (row i32)
                           (col i32))
   (aref an-arr row col))
+
+;; check fn argument value in array dimensions
+(defun arr-set i32 ((n i32) (an-arr (arr i32 (n 2)))
+                          (row i32)
+                          (col i32))
+  (aset (+ n n) an-arr row col))
 
 ;; lexically scoped variables
 (defun let-it-be i32 ((a i32))

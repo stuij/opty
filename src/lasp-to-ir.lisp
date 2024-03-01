@@ -112,7 +112,8 @@
 
 (setf (gethash 'if *builtins*)  #'if-to-ir)
 
-(defun aref-to-ir (args expr env graph)
+;; get array element pointer
+(defun aloc-to-ir (args expr env graph)
   (let* ((arr (to-ir (car args) env graph))
          (indices (loop for i in (cdr args)
                         collect (to-ir i env graph)))
@@ -131,7 +132,23 @@
              :type-info ret-type-info
              :arity (1+ (length (dimensions (type-info arr)))))))
 
+(setf (gethash 'aloc *builtins*)  #'aloc-to-ir)
+
+;; load array element value
+(defun aref-to-ir (args expr env graph)
+  (let ((tmp (aloc-to-ir args expr env graph)))
+    (emit-op 'ldr (list tmp) graph :source expr)))
+
 (setf (gethash 'aref *builtins*)  #'aref-to-ir)
+
+;; set array element. return the value that the array has been set with
+(defun aset-to-ir (args expr env graph)
+  (let ((val-tmp (to-ir (car args) env graph))
+        (loc-tmp (aloc-to-ir (cdr args) expr env graph)))
+    (emit-op 'str (list val-tmp loc-tmp) graph :source expr)
+    val-tmp))
+
+(setf (gethash 'aset *builtins*)  #'aset-to-ir)
 
 ;; Very similar to if expression, but as we don't need to evaluate a body.
 ;; I hope we can get away with not branching to a new bb for the 1st clause,
