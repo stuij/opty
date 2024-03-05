@@ -77,20 +77,21 @@
 
 ;; list of op-name, result types, operand types
 (gen-op-make-fns
- ((add    (i32)   (i32 i32))
-  (mul    (i32)   (i32 i32))
-  (lt     (i32)   (i32 i32))
-  (le     (i32)   (i32 i32))
-  (gt     (i32)   (i32 i32))
-  (ge     (i32)   (i32 i32))
-  (cpy    (union) (union))
-  (jmp    ()      (bb))
-  (bcond  ()      (i32 bb bb))
-  (ret    ()      (union))
-  (elem   (ptr)   (ptr i32)) ;; argument numbers can vary as per array dimensions
-  (ldi    (i32)   (imm))
-  (ldr    (i32)   (ptr))
-  (str    ()      (i32 ptr))))
+ ((add    (i32)    (i32 i32))
+  (mul    (i32)    (i32 i32))
+  (lt     (i32)    (i32 i32))
+  (le     (i32)    (i32 i32))
+  (gt     (i32)    (i32 i32))
+  (ge     (i32)    (i32 i32))
+  (cpy    (union)  (union))
+  (jmp    ()       (bb))
+  (bcond  ()       (i32 bb bb))
+  (ret    ()       (union))
+  (elem   (ptr)    (ptr i32)) ;; argument numbers can vary as per array dimensions
+  (ldi    (i32)    (imm))
+  (ldp    (poison) ())
+  (ldr    (i32)    (ptr))
+  (str    ()       (i32 ptr))))
 
 (defun install-op (op graph &key source type-info)
   "Register op in temp table, and append to current block"

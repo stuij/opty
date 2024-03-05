@@ -22,8 +22,12 @@
   (and (+ a b) b)
   (* a b))
 
+;; check if with one or two clauses
 (defun if-it i32 ((a i32) (b i32) (c i32))
   (if (< a b) (+ b c) c))
+
+(defun if-one-clause i32 ((a i32) (b i32))
+  (if (< a 5) b))
 
 ;; check simple immediate
 (defun add-two i32 ((a i32))
@@ -34,19 +38,19 @@
 (defun arr-2x ptr ((an-arr (arr i32 (2 2)))
                       (row i32)
                       (col i32))
-  (aloc an-arr row col))
+  (aptr an-arr row col))
 
 ;; check array argument specification and array access
 ;; (one dimensional)
 (defun arr-1x ptr ((an-arr (arr i32 (2)))
                       (col i32))
-  (aloc an-arr col))
+  (aptr an-arr col))
 
 ;; check fn argument value in array dimensions
 (defun arr-ptr-index ptr ((n i32) (an-arr (arr i32 (n 2)))
                           (row i32)
                           (col i32))
-  (aloc an-arr row col))
+  (aptr an-arr row col))
 
 ;; check fn argument value in array dimensions
 (defun arr-val-index i32 ((n i32) (an-arr (arr i32 (n 2)))
@@ -81,3 +85,6 @@
   (progn
     (+ a 1)
     (+ a a)))
+
+(defun check-poison poison (())
+  poison)

@@ -82,41 +82,50 @@
           "argument arity to `if` exceeds 3: ~A" args)
   (assert (> (length args) 1) (args)
           "`if` needs at least a condition and a clause: ~A" args)
-  (destructuring-bind (cond-form true-form false-form) args
-    (let* ((bb-true (create-bb graph))
-           (bb-false (create-bb graph))
-           (bb-cont (create-bb graph))
-           (cond-temp (to-ir cond-form env graph)))
-      (emit-op 'bcond (list cond-temp bb-true bb-false) graph :source expr)
-      (start-block bb-true graph)
-      (let* ((tmp-true (to-ir true-form env graph))
-             (ret-type (temp-type tmp-true))
-             (cpy-type-list (list ret-type))
-             (ret (new-temp (temp-table graph) :type ret-type)))
-        (emit-op 'cpy (list tmp-true) graph
-                 :source expr
-                 :operand-types cpy-type-list
-                 :result-types cpy-type-list
-                 :results (list ret))
-        (emit-op 'jmp (list bb-cont) graph :source expr)
-        (start-block bb-false graph)
-        (let ((tmp-false (to-ir false-form env graph)))
-          (assert (eq ret-type (temp-type tmp-false)) ()
-                  "`if` branch return values aren't equal: ~A, ~A"
-                  ret-type (temp-type tmp-false) 'i32)
-          (emit-op 'cpy (list tmp-false) graph
-                   :source expr
-                   :operand-types cpy-type-list
-                   :result-types cpy-type-list
-                   :results (list ret)))
-        (emit-op 'jmp (list bb-cont) graph :source expr)
-        (start-block bb-cont graph)
-        ret))))
+  (let* ((cond-form (car args))
+         (true-form (cadr args))
+         (false-form (caddr args))
+         (bb-true (create-bb graph))
+         (bb-false (create-bb graph))
+         (bb-cont (create-bb graph))
+         (cond-temp (to-ir cond-form env graph)))
+    (emit-op 'bcond (list cond-temp bb-true bb-false) graph :source expr)
+    (start-block bb-true graph)
+    (let* ((tmp-true (to-ir true-form env graph))
+           (ret-type (temp-type tmp-true))
+           (cpy-type-list (list ret-type))
+           (ret (new-temp (temp-table graph) :type ret-type)))
+      (emit-op 'cpy (list tmp-true) graph
+               :source expr
+               :operand-types cpy-type-list
+               :result-types cpy-type-list
+               :results (list ret))
+      (emit-op 'jmp (list bb-cont) graph :source expr)
+      (start-block bb-false graph)
+      (if false-form
+          (let ((tmp-false (to-ir false-form env graph)))
+            (assert (eq ret-type (temp-type tmp-false)) ()
+                    "`if` branch return values aren't equal: ~A, ~A"
+                    ret-type (temp-type tmp-false) 'i32)
+            (emit-op 'cpy (list tmp-false) graph
+                     :source expr
+                     :operand-types cpy-type-list
+                     :result-types cpy-type-list
+                     :results (list ret)))
+          (let ((tmp-false (to-ir 'poison env graph)))
+            (emit-op 'cpy (list tmp-false) graph
+                     :source expr
+                     :operand-types (list (temp-type tmp-false))
+                     :result-types cpy-type-list
+                     :results (list ret))))
+      (emit-op 'jmp (list bb-cont) graph :source expr)
+      (start-block bb-cont graph)
+      ret)))
 
 (setf (gethash 'if *builtins*)  #'if-to-ir)
 
 ;; get array element pointer
-(defun aloc-to-ir (args expr env graph)
+(defun aptr-to-ir (args expr env graph)
   (let* ((arr (to-ir (car args) env graph))
          (indices (loop for i in (cdr args)
                         collect (to-ir i env graph)))
@@ -135,11 +144,11 @@
              :type-info ret-type-info
              :arity (1+ (length (dimensions (type-info arr)))))))
 
-(setf (gethash 'aloc *builtins*)  #'aloc-to-ir)
+(setf (gethash 'aptr *builtins*)  #'aptr-to-ir)
 
 ;; load array element value
 (defun aref-to-ir (args expr env graph)
-  (let ((tmp (aloc-to-ir args expr env graph)))
+  (let ((tmp (aptr-to-ir args expr env graph)))
     (emit-op 'ldr (list tmp) graph :source expr)))
 
 (setf (gethash 'aref *builtins*)  #'aref-to-ir)
@@ -147,7 +156,7 @@
 ;; set array element. return the value that the array has been set with
 (defun aset-to-ir (args expr env graph)
   (let ((val-tmp (to-ir (car args) env graph))
-        (loc-tmp (aloc-to-ir (cdr args) expr env graph)))
+        (loc-tmp (aptr-to-ir (cdr args) expr env graph)))
     (emit-op 'str (list val-tmp loc-tmp) graph :source expr)
     val-tmp))
 
@@ -194,6 +203,9 @@
   (assert (integerp nr) ()
           "Immediate isn't an integer: ~A" nr)
   (emit-op 'ldi (list nr) graph :source nr))
+
+(defun poison-to-ir (poison graph)
+  (emit-op 'ldp '() graph :source poison))
 
 (defun handle-var-form (form env graph)
   (assert (symbolp (car form)) ()
@@ -323,6 +335,8 @@
   (if (atom expr)
       (cond ((numberp expr)
              (number-to-ir expr graph))
+            ((eq expr 'poison)
+             (poison-to-ir expr graph))
             (t
              (if-let (var (lookup expr env))
                (temp var)
@@ -386,7 +400,9 @@
     (args-to-ir args graph env)
     (let ((ret-temp
             (if body
-                (body-to-ir body env graph)
+                (if-let (ret (body-to-ir body env graph))
+                  ret
+                  (to-temp nil (temp-table graph) :type 'void))
                 (to-temp nil (temp-table graph) :type 'void))))
       (assert (eq (temp-type ret-temp) ret-val) (ret-temp)
               "Return type ~A, isn't equal to the type specified in the ~
