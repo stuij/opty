@@ -65,7 +65,10 @@
 (plain-op-to-builtins
  ((+ add)
   (* mul)
-  (< lt)))
+  (< lt)
+  (<= le)
+  (> gt)
+  (>= ge)))
 
 
 ;; parse source language to IR
