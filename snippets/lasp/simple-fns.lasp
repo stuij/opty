@@ -76,3 +76,8 @@
         (count 0 (+ count 1)))
        ((< times count)
         nth)))
+
+(defun progn-me i32 ((a i32))
+  (progn
+    (+ a 1)
+    (+ a a)))

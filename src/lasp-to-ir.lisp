@@ -310,6 +310,12 @@
 
 (setf (gethash 'do* *builtins*)  #'do*-to-ir)
 
+(defun progn-to-ir (forms expr env graph)
+  (declare (ignore expr))
+  (body-to-ir forms env graph))
+
+(setf (gethash 'progn *builtins*)  #'progn-to-ir)
+
 (defun to-ir (expr env graph)
   (if (atom expr)
       (cond ((numberp expr)
