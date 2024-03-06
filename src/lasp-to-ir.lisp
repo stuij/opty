@@ -129,7 +129,7 @@
                  :operand-types (list tmp-false-type)
                  :result-types ret-type-list
                  :results (list ret)))
-      (emit-op 'jmp (list bb-cont) graph :source expr)
+      (emit-jmp bb-cont expr graph)
       (start-block bb-cont graph)
       ret)))
 
@@ -205,7 +205,7 @@
                :operand-types cpy-type-list
                :result-types cpy-type-list
                :results (list ret))
-      (emit-op 'jmp (list bb-cont) graph :source expr))
+      (emit-jmp bb-cont expr graph))
     (start-block bb-cont graph)
     ret))
 
@@ -304,7 +304,6 @@
                                         child-env graph))))
                    (setf step-forms (append step-forms (list (caddr spec)))))
               finally (return (values var-tmps step-forms)))
-      (print var-tmps)
       (let ((exit-tmp (to-ir exit-condition child-env graph)))
         (emit-bcond exit-tmp bb-cont bb-loop exit-condition graph))
       ;; emit body forms
