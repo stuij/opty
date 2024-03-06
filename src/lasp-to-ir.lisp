@@ -44,8 +44,6 @@
     (setf (gethash var (vars env)) instance)))
 
 
-
-
 ;; Mapping of source language to opcode name for basic ops.
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (defparameter *builtins*
@@ -60,7 +58,6 @@
                                (lambda (args expr env graph)
                                  (plain-op-to-ir
                                   ',ir-op args expr env graph)))))))
-
 
 (plain-op-to-builtins
  ((+ add)
@@ -77,6 +74,21 @@
                      collect (to-ir expr env graph))))
     (emit-op op args graph :source expr)))
 
+(defun set-bb-relations (predecessor &rest successors)
+  (setf (successors predecessor) (append (successors predecessor)
+                                         successors))
+  (loop for s in successors
+        do (setf (predecessors s) (append (predecessors s)
+                                          (list predecessor)))))
+
+(defun emit-bcond (cond-temp bb-true bb-false expr graph)
+  (emit-op 'bcond (list cond-temp bb-true bb-false) graph :source expr)
+  (set-bb-relations (current graph) bb-true bb-false))
+
+(defun emit-jmp (target expr graph)
+  (emit-op 'jmp (list target) graph :source expr)
+  (set-bb-relations (current graph) target))
+
 (defun if-to-ir (args expr env graph)
   (assert (<= (length args) 3) (args)
           "argument arity to `if` exceeds 3: ~A" args)
@@ -89,35 +101,34 @@
          (bb-false (create-bb graph))
          (bb-cont (create-bb graph))
          (cond-temp (to-ir cond-form env graph)))
-    (emit-op 'bcond (list cond-temp bb-true bb-false) graph :source expr)
+    (emit-bcond cond-temp bb-true bb-false expr graph)
     (start-block bb-true graph)
     (let* ((tmp-true (to-ir true-form env graph))
-           (ret-type (temp-type tmp-true))
-           (cpy-type-list (list ret-type))
+           (tmp-true-type (temp-type tmp-true))
+           (ret-type (if false-form
+                         (temp-type tmp-true)
+                         'poison))
+           (ret-type-list (list ret-type))
            (ret (new-temp (temp-table graph) :type ret-type)))
       (emit-op 'cpy (list tmp-true) graph
                :source expr
-               :operand-types cpy-type-list
-               :result-types cpy-type-list
+               :operand-types (list tmp-true-type)
+               :result-types ret-type-list
                :results (list ret))
-      (emit-op 'jmp (list bb-cont) graph :source expr)
+      (emit-jmp bb-cont expr graph)
       (start-block bb-false graph)
-      (if false-form
-          (let ((tmp-false (to-ir false-form env graph)))
-            (assert (eq ret-type (temp-type tmp-false)) ()
-                    "`if` branch return values aren't equal: ~A, ~A"
-                    ret-type (temp-type tmp-false) 'i32)
-            (emit-op 'cpy (list tmp-false) graph
-                     :source expr
-                     :operand-types cpy-type-list
-                     :result-types cpy-type-list
-                     :results (list ret)))
-          (let ((tmp-false (to-ir 'poison env graph)))
-            (emit-op 'cpy (list tmp-false) graph
-                     :source expr
-                     :operand-types (list (temp-type tmp-false))
-                     :result-types cpy-type-list
-                     :results (list ret))))
+      (let* ((tmp-false (if false-form
+                            (to-ir false-form env graph)
+                            (to-ir 'poison env graph)))
+             (tmp-false-type (temp-type tmp-false)))
+        (assert (eq ret-type tmp-false-type) ()
+                "`if` branch return values aren't equal: ~A, ~A"
+                ret-type tmp-false-type)
+        (emit-op 'cpy (list tmp-false) graph
+                 :source expr
+                 :operand-types (list tmp-false-type)
+                 :result-types ret-type-list
+                 :results (list ret)))
       (emit-op 'jmp (list bb-cont) graph :source expr)
       (start-block bb-cont graph)
       ret)))
@@ -180,7 +191,7 @@
              :operand-types cpy-type-list
              :result-types cpy-type-list
              :results (list ret))
-    (emit-op 'bcond (list 1st-clause-tmp bb-2nd-clause bb-cont) graph :source expr)
+    (emit-bcond 1st-clause-tmp bb-2nd-clause bb-cont expr graph)
     (start-block bb-2nd-clause graph)
     (let ((2nd-clause-tmp (to-ir (cadr args) env graph)))
       (assert (and (eq (temp-type 1st-clause-tmp) 'i32)
@@ -294,7 +305,7 @@
               finally (return (values var-tmps step-forms)))
       (print var-tmps)
       (let ((exit-tmp (to-ir exit-condition child-env graph)))
-        (emit-op 'bcond (list exit-tmp bb-cont bb-loop) graph :source exit-condition))
+        (emit-bcond exit-tmp bb-cont bb-loop exit-condition graph))
       ;; emit body forms
       (start-block bb-loop graph)
       (body-to-ir body child-env graph)
@@ -316,7 +327,7 @@
                               :results (list var-tmp)))))
       ;; check for loop exit condition and execute final forms
       (let ((exit-tmp (to-ir exit-condition child-env graph)))
-        (emit-op 'bcond (list exit-tmp bb-cont bb-loop) graph :source exit-condition))
+        (emit-bcond exit-tmp bb-cont bb-loop exit-condition graph))
       (start-block bb-cont graph)
       (loop with ret = nil
             for form in final-forms
@@ -412,6 +423,7 @@
                :operand-types (list (temp-type ret-temp)))
       (setf (ret graph) ret-temp))
     (setf (exit graph) (current graph))
+    (classify-graph graph)
     graph))
 
 (defun top-to-ir (expr env)

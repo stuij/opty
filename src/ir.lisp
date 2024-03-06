@@ -293,7 +293,7 @@
         (format s ""))))
 
 (defun serialize-blocks (graph s)
-  (loop for node being the hash-value of (nodes graph)
+  (loop for node in (rpo-nodes graph)
         do (progn
              (format s "~%  ~A" (print-ir node))
              (loop for op in (instrs node)

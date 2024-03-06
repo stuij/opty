@@ -147,7 +147,7 @@
                (setf (rpost node) rpostorder
                      rpostorder (1- rpostorder))))
       (dfs (entry digraph)))
-    (setf (gethash 'classification  (analyses digraph))
+    (setf (gethash 'classification (analyses digraph))
           classification)))
 
 (defun make-classified-graph (name graph)
