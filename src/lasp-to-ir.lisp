@@ -135,6 +135,7 @@
 
 (setf (gethash 'if *builtins*)  #'if-to-ir)
 
+;; array specs are row-major
 ;; get array element pointer
 (defun aptr-to-ir (args expr env graph)
   (let* ((arr (to-ir (car args) env graph))

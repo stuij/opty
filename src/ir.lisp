@@ -87,7 +87,10 @@
   (jmp    ()       (bb))
   (bcond  ()       (i32 bb bb))
   (ret    ()       (union))
-  (elem   (ptr)    (ptr i32)) ;; argument numbers can vary as per array dimensions
+  ;; Amount of elem argumentscan vary as per array dimensions, which can't be
+  ;; expressed in this implicit spec.
+  ;; Data layout interpretation for elem arguments is row-major.
+  (elem   (ptr)    (ptr i32))
   (ldi    (i32)    (imm))
   (ldp    (poison) ())
   (ldr    (i32)    (ptr))
