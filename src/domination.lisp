@@ -1,7 +1,9 @@
 (in-package :opty)
 
-(defclass dominator (analysis)
-  ((idoms         :initarg :idoms         :accessor idoms
+(defclass domination (analysis)
+  ((idoms        :initarg :idoms        :accessor idoms
+                 :initform (make-hash-table))
+   (children     :initarg :children     :accessor children
                  :initform (make-hash-table))
    (dom-frontier :initarg :dom-frontier :accessor dom-frontier
                  :initform (make-hash-table))))
@@ -9,7 +11,7 @@
 ;; algorithm is from "A Simple, Fast Dominance Algorithm" paper by
 ;; Keith D. Cooper, Timothy J. Harvey, and Ken Kennedy:
 ;; https://www.cs.tufts.edu/comp/150FP/archive/keith-cooper/dom14.pdf
-(defun calculate-dom (graph)
+(defun calculate-idoms (graph)
   (let ((idoms (make-hash-table))
         (nodes (rpo-nodes graph)))
     (setf (gethash (id (car nodes)) idoms) (car nodes))
@@ -55,8 +57,15 @@
         using (hash-key k)
         collect (cons k (id v))))
 
+(defun dominate-graph (graph)
+  (let* ((idoms (calculate-idoms graph))
+         (dom-analysis (make-instance 'domination
+                                      :idoms idoms)))
+    (setf (gethash 'domination (analyses graph))
+          dom-analysis)))
+
 (define-test idoms
-  (let* ((idoms (calculate-dom (make-classified-graph "maxcol" maxcol-graph)))
+  (let* ((idoms (calculate-idoms (make-classified-graph "maxcol" maxcol-graph)))
          (idoms-list (print-idoms idoms)))
     (true (subsetp '((0 . 0)) idoms-list :test 'equal))
     (true (subsetp '((1 . 0)) idoms-list :test 'equal))

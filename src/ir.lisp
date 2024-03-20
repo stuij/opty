@@ -262,6 +262,10 @@
     (start-block entry graph)
     graph))
 
+(defun make-initial-analyses (graph)
+  (classify-graph graph)
+  (dominate-graph graph))
+
 
 ;; serialize
 (defparameter *print-source* t)

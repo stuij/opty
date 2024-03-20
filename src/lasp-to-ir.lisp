@@ -423,7 +423,7 @@
                :operand-types (list (temp-type ret-temp)))
       (setf (ret graph) ret-temp))
     (setf (exit graph) (current graph))
-    (classify-graph graph)
+    (make-initial-analyses graph)
     graph))
 
 (defun top-to-ir (expr env)
