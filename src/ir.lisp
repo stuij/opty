@@ -198,7 +198,7 @@
       (format nil "~A" (temp-type tmp))))
 
 (defmethod print-ir ((tmp temp) &key typep)
-  (if typep
+  (if (and typep *print-type*)
       (format nil "(~A ~A)" (name tmp) (print-type tmp))
       (format nil "~A" (name tmp))))
 
@@ -265,6 +265,7 @@
 
 ;; serialize
 (defparameter *print-source* t)
+(defparameter *print-type* t)
 
 (defun serialize-arg (s arg colon at)
   (declare (ignore colon at))
