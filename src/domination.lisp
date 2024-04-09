@@ -14,7 +14,7 @@
 (defun calculate-idoms (graph)
   (let ((idoms (make-hash-table))
         (nodes (rpo-nodes graph)))
-    (setf (gethash (id (car nodes)) idoms) (car nodes))
+    (setf (gethash (car nodes) idoms) (car nodes))
     (loop
       with changed-p = t
       while changed-p
@@ -28,16 +28,16 @@
              do (let* ((predecessors (predecessors node))
                        ;; find a predecessor that has an idom
                        (new-idom (find-if (lambda (p)
-                                            (gethash (id p) idoms))
+                                            (gethash p idoms))
                                           predecessors)))
                   (setf predecessors (remove new-idom predecessors))
                   (loop
                     for p in predecessors
                     ;; if idom already exists
-                    do (if (gethash (id p) idoms)
+                    do (if (gethash p idoms)
                            (setf new-idom (intersect p new-idom idoms))))
-                  (unless (equal (gethash (id node) idoms) new-idom)
-                    (setf (gethash (id node) idoms) new-idom)
+                  (unless (equal (gethash node idoms) new-idom)
+                    (setf (gethash node idoms) new-idom)
                     (setf changed-p t))))))
     idoms))
 
@@ -47,20 +47,37 @@
     (loop while (not (eq finger-a finger-b))
           do (progn
                (loop while (< (rpost finger-b) (rpost finger-a))
-                     do (setf finger-a (gethash (id finger-a) idoms)))
+                     do (setf finger-a (gethash finger-a idoms)))
                (loop while (< (rpost finger-a) (rpost finger-b))
-                     do (setf finger-b (gethash (id finger-b) idoms)))))
+                     do (setf finger-b (gethash finger-b idoms)))))
     finger-a))
 
 (defun print-idoms (idoms)
   (loop for v being the hash-values of idoms
         using (hash-key k)
-        collect (cons k (id v))))
+        collect (cons (id k) (id v))))
+
+(defun collect-children (idoms)
+  (loop for parent being the hash-values of idoms
+        using (hash-key child)
+        with children = (make-hash-table)
+        do (setf (gethash parent children)
+                 (append (gethash parent children) (list child)))
+        finally (return children)))
+
+(defun print-children (children)
+  (loop for childs being the hash-values of children
+        using (hash-key parent)
+        collect (list (id parent)
+                      (loop for c in childs
+                            collect (id c)))))
 
 (defun dominate-graph (graph)
   (let* ((idoms (calculate-idoms graph))
+         (children (collect-children idoms))
          (dom-analysis (make-instance 'domination
-                                      :idoms idoms)))
+                                      :idoms idoms
+                                      :children children)))
     (setf (gethash 'domination (analyses graph))
           dom-analysis)))
 
@@ -74,3 +91,13 @@
     (true (subsetp '((3 . 2)) idoms-list :test 'equal))
     (true (subsetp '((4 . 1)) idoms-list :test 'equal))
     (true (subsetp '((5 . 0)) idoms-list :test 'equal))))
+
+(defun maxcol-graph-children ()
+  (let ((idoms (calculate-idoms (make-classified-graph "maxcol" maxcol-graph))))
+    (collect-children idoms)))
+
+(define-test children
+  (let* ((children (print-children (maxcol-graph-children))))
+    (true (subsetp '(0 (0 1 5)) children :test 'equal))
+    (true (subsetp '(1 (2 4)) children :test 'equal))
+    (true (subsetp '(2 (6 3)) children :test 'equal))))
