@@ -3,4 +3,5 @@
 (defun run-tests ()
   (test 'classify-graph)
   (test 'reverse-post-order)
-  (test 'idoms))
+  (test 'idoms)
+  (test 'dom-frontiers))

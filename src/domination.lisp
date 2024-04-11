@@ -1,12 +1,9 @@
 (in-package :opty)
 
 (defclass domination (analysis)
-  ((idoms        :initarg :idoms        :accessor idoms
-                 :initform (make-hash-table))
-   (children     :initarg :children     :accessor children
-                 :initform (make-hash-table))
-   (dom-frontier :initarg :dom-frontier :accessor dom-frontier
-                 :initform (make-hash-table))))
+  ((idoms         :initarg :idoms         :accessor idoms)
+   (children      :initarg :children      :accessor children)
+   (dom-frontiers :initarg :dom-frontiers :accessor dom-frontiers)))
 
 ;; algorithm is from "A Simple, Fast Dominance Algorithm" paper by
 ;; Keith D. Cooper, Timothy J. Harvey, and Ken Kennedy:
@@ -57,9 +54,20 @@
         using (hash-key k)
         collect (cons (id k) (id v))))
 
+(define-test idoms
+  (let* ((idoms (calculate-idoms (make-classified-graph "maxcol" maxcol-graph)))
+         (idoms-list (print-idoms idoms)))
+    (true (subsetp '((0 . 0)) idoms-list :test 'equal))
+    (true (subsetp '((1 . 0)) idoms-list :test 'equal))
+    (true (subsetp '((2 . 1)) idoms-list :test 'equal))
+    (true (subsetp '((6 . 2)) idoms-list :test 'equal))
+    (true (subsetp '((3 . 2)) idoms-list :test 'equal))
+    (true (subsetp '((4 . 1)) idoms-list :test 'equal))
+    (true (subsetp '((5 . 0)) idoms-list :test 'equal))))
+
 (defun collect-children (idoms)
   (loop for parent being the hash-values of idoms
-        using (hash-key child)
+          using (hash-key child)
         with children = (make-hash-table)
         do (setf (gethash parent children)
                  (append (gethash parent children) (list child)))
@@ -72,32 +80,58 @@
                       (loop for c in childs
                             collect (id c)))))
 
-(defun dominate-graph (graph)
-  (let* ((idoms (calculate-idoms graph))
-         (children (collect-children idoms))
-         (dom-analysis (make-instance 'domination
-                                      :idoms idoms
-                                      :children children)))
-    (setf (gethash 'domination (analyses graph))
-          dom-analysis)))
-
-(define-test idoms
-  (let* ((idoms (calculate-idoms (make-classified-graph "maxcol" maxcol-graph)))
-         (idoms-list (print-idoms idoms)))
-    (true (subsetp '((0 . 0)) idoms-list :test 'equal))
-    (true (subsetp '((1 . 0)) idoms-list :test 'equal))
-    (true (subsetp '((2 . 1)) idoms-list :test 'equal))
-    (true (subsetp '((6 . 2)) idoms-list :test 'equal))
-    (true (subsetp '((3 . 2)) idoms-list :test 'equal))
-    (true (subsetp '((4 . 1)) idoms-list :test 'equal))
-    (true (subsetp '((5 . 0)) idoms-list :test 'equal))))
-
 (defun maxcol-graph-children ()
   (let ((idoms (calculate-idoms (make-classified-graph "maxcol" maxcol-graph))))
     (collect-children idoms)))
 
 (define-test children
   (let* ((children (print-children (maxcol-graph-children))))
-    (true (subsetp '(0 (0 1 5)) children :test 'equal))
-    (true (subsetp '(1 (2 4)) children :test 'equal))
-    (true (subsetp '(2 (6 3)) children :test 'equal))))
+    (true (subsetp '((0 (0 1 5))) children :test 'equal))
+    (true (subsetp '((1 (2 4))) children :test 'equal))
+    (true (subsetp '((2 (6 3))) children :test 'equal))))
+
+(defun calculate-dominance-frontiers (bbs idoms)
+  (loop
+    with dfs = (make-hash-table)
+    for bb being the hash-values of bbs
+    for preds = (predecessors bb)
+    when (> (length preds) 1)
+      do (loop for p in preds
+               do (do ((runner p (gethash runner idoms)))
+                      ((eql runner (gethash bb idoms)))
+                    (unless (member bb (gethash runner dfs))
+                      (push bb (gethash runner dfs)))))
+    finally (return dfs)))
+
+(defun print-dom-frontiers (frontiers)
+  (loop for childs being the hash-values of frontiers
+        using (hash-key parent)
+        collect (list (id parent)
+                      (loop for c in childs
+                            collect (id c)))))
+
+(defun dominate-graph (graph)
+  (let* ((idoms (calculate-idoms graph))
+         (children (collect-children idoms))
+         (dom-frontiers (calculate-dominance-frontiers (nodes graph) idoms))
+         (dom-analysis (make-instance 'domination
+                                      :idoms idoms
+                                      :children children
+                                      :dom-frontiers dom-frontiers)))
+    (setf (gethash 'domination (analyses graph))
+          dom-analysis)))
+
+(defun maxcol-frontiers ()
+  (let* ((graph (make-classified-graph "maxcol" maxcol-graph))
+         (idoms (calculate-idoms graph))
+         (frontiers (calculate-dominance-frontiers (nodes graph) idoms)))
+    (print-dom-frontiers frontiers)))
+
+(define-test dom-frontiers
+  (let ((frontiers (maxcol-frontiers)))
+    (format t "frontiers: ~A" frontiers)
+    (true (subsetp '((4 (5 1))) frontiers :test 'equalp))
+    (true (subsetp '((1 (5 1))) frontiers :test 'equal))
+    (true (subsetp '((3 (4 2))) frontiers :test 'equal))
+    (true (subsetp '((2 (4 2))) frontiers :test 'equal))
+    (true (subsetp '((6 (3)))   frontiers :test 'equal))))
