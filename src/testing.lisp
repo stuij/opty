@@ -4,4 +4,5 @@
   (test 'classify-graph)
   (test 'reverse-post-order)
   (test 'idoms)
-  (test 'dom-frontiers))
+  (test 'dom-frontiers)
+  (test 'iterated-dom-frontier))

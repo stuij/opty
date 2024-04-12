@@ -110,6 +110,63 @@
                       (loop for c in childs
                             collect (id c)))))
 
+
+
+(defun maxcol-frontiers ()
+  (let* ((graph (make-classified-graph "maxcol" maxcol-graph))
+         (idoms (calculate-idoms graph)))
+    (calculate-dominance-frontiers (nodes graph) idoms)))
+
+(define-test dom-frontiers
+  (let ((frontiers (print-dom-frontiers (maxcol-frontiers))))
+    (format t "frontiers: ~A" frontiers)
+    (true (subsetp '((4 (5 1))) frontiers :test 'equalp))
+    (true (subsetp '((1 (5 1))) frontiers :test 'equal))
+    (true (subsetp '((3 (4 2))) frontiers :test 'equal))
+    (true (subsetp '((2 (4 2))) frontiers :test 'equal))
+    (true (subsetp '((6 (3)))   frontiers :test 'equal))))
+
+(defun calculate-iterated-dom-frontier (nodes dom-frontiers)
+  (do* ((df+ (copy-list nodes))
+        (worklist (copy-list nodes))
+        (curr))
+      ((emptyp worklist)
+       df+)
+    (setf curr (pop worklist))
+    (loop for bb in (gethash curr dom-frontiers)
+          do (if (not (member bb df+))
+                 (progn
+                   (push bb df+)
+                   (push bb worklist))))))
+
+(defun ids-to-nodes (ids graph)
+  (loop for id in ids
+        collect (gethash id (nodes graph))))
+
+(defun maxcol-iterated-dom-frontier (ids)
+  (let* ((graph (make-classified-graph "maxcol" maxcol-graph))
+         (idoms (calculate-idoms graph))
+         (frontiers (calculate-dominance-frontiers (nodes graph) idoms))
+         (node-list (ids-to-nodes ids graph)))
+    (calculate-iterated-dom-frontier node-list frontiers)))
+
+(defun print-iterated-dom-frontier (idf)
+  (loop for bb in idf
+        collect (id bb)))
+
+(defun print-node-ids-to-idf (node-ids frontiers graph)
+  (print-iterated-dom-frontier
+   (calculate-iterated-dom-frontier (ids-to-nodes node-ids graph) frontiers)))
+
+(define-test iterated-dom-frontier
+  (let* ((graph (make-classified-graph "maxcol" maxcol-graph))
+         (idoms (calculate-idoms graph))
+         (frontiers (calculate-dominance-frontiers (nodes graph) idoms)))
+    (true (equal '(0) (print-node-ids-to-idf '(0) frontiers graph)))
+    (true (equal '(1 5 2 4 3 6) (print-node-ids-to-idf '(6) frontiers graph)))
+    (true (equal '(1 5 4 2) (print-node-ids-to-idf '(2) frontiers graph)))
+))
+
 (defun dominate-graph (graph)
   (let* ((idoms (calculate-idoms graph))
          (children (collect-children idoms))
@@ -120,18 +177,3 @@
                                       :dom-frontiers dom-frontiers)))
     (setf (gethash 'domination (analyses graph))
           dom-analysis)))
-
-(defun maxcol-frontiers ()
-  (let* ((graph (make-classified-graph "maxcol" maxcol-graph))
-         (idoms (calculate-idoms graph))
-         (frontiers (calculate-dominance-frontiers (nodes graph) idoms)))
-    (print-dom-frontiers frontiers)))
-
-(define-test dom-frontiers
-  (let ((frontiers (maxcol-frontiers)))
-    (format t "frontiers: ~A" frontiers)
-    (true (subsetp '((4 (5 1))) frontiers :test 'equalp))
-    (true (subsetp '((1 (5 1))) frontiers :test 'equal))
-    (true (subsetp '((3 (4 2))) frontiers :test 'equal))
-    (true (subsetp '((2 (4 2))) frontiers :test 'equal))
-    (true (subsetp '((6 (3)))   frontiers :test 'equal))))
