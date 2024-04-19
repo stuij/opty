@@ -82,11 +82,12 @@
                                           (list predecessor)))))
 
 (defun emit-bcond (cond-temp bb-true bb-false expr graph)
-  (emit-op 'bcond (list cond-temp bb-true bb-false) graph :source expr)
+  (emit-op 'bcond (list cond-temp bb-true bb-false) graph
+           :source expr :expr-temp-p nil)
   (set-bb-relations (current graph) bb-true bb-false))
 
 (defun emit-jmp (target expr graph)
-  (emit-op 'jmp (list target) graph :source expr)
+  (emit-op 'jmp (list target) graph :source expr :expr-temp-p nil)
   (set-bb-relations (current graph) target))
 
 (defun if-to-ir (args expr env graph)
@@ -114,7 +115,8 @@
                :source expr
                :operand-types (list tmp-true-type)
                :result-types ret-type-list
-               :results (list ret))
+               :results (list ret)
+               :expr-temp-p nil)
       (emit-jmp bb-cont expr graph)
       (start-block bb-false graph)
       (let* ((tmp-false (if false-form
@@ -128,7 +130,9 @@
                  :source expr
                  :operand-types (list tmp-false-type)
                  :result-types ret-type-list
-                 :results (list ret)))
+                 :results (list ret)
+                 ;; redundant, the temp has already been registered, but for completeness
+                 :expr-temp-p nil))
       (emit-jmp bb-cont expr graph)
       (start-block bb-cont graph)
       ret)))
@@ -154,14 +158,15 @@
              :source expr
              :operand-types operand-types
              :type-info ret-type-info
-             :arity (1+ (length (dimensions (type-info arr)))))))
+             :arity (1+ (length (dimensions (type-info arr))))
+             :expr-temp-p nil)))
 
 (setf (gethash 'aptr *builtins*)  #'aptr-to-ir)
 
 ;; load array element value
 (defun aref-to-ir (args expr env graph)
   (let ((tmp (aptr-to-ir args expr env graph)))
-    (emit-op 'ldr (list tmp) graph :source expr)))
+    (emit-op 'ldr (list tmp) graph :source expr :expr-temp-p nil)))
 
 (setf (gethash 'aref *builtins*)  #'aref-to-ir)
 
@@ -169,7 +174,7 @@
 (defun aset-to-ir (args expr env graph)
   (let ((val-tmp (to-ir (car args) env graph))
         (loc-tmp (aptr-to-ir (cdr args) expr env graph)))
-    (emit-op 'str (list val-tmp loc-tmp) graph :source expr)
+    (emit-op 'str (list val-tmp loc-tmp) graph :source expr :expr-temp-p nil)
     val-tmp))
 
 (setf (gethash 'aset *builtins*)  #'aset-to-ir)
@@ -191,7 +196,8 @@
              :source expr
              :operand-types cpy-type-list
              :result-types cpy-type-list
-             :results (list ret))
+             :results (list ret)
+             :expr-temp-p nil)
     (emit-bcond 1st-clause-tmp bb-2nd-clause bb-cont expr graph)
     (start-block bb-2nd-clause graph)
     (let ((2nd-clause-tmp (to-ir (cadr args) env graph)))
@@ -204,7 +210,8 @@
                :source expr
                :operand-types cpy-type-list
                :result-types cpy-type-list
-               :results (list ret))
+               :results (list ret)
+               :expr-temp-p nil)
       (emit-jmp bb-cont expr graph))
     (start-block bb-cont graph)
     ret))
@@ -214,10 +221,10 @@
 (defun number-to-ir (nr graph)
   (assert (integerp nr) ()
           "Immediate isn't an integer: ~A" nr)
-  (emit-op 'ldi (list nr) graph :source nr))
+  (emit-op 'ldi (list nr) graph :source nr :expr-temp-p nil))
 
 (defun poison-to-ir (poison graph)
-  (emit-op 'ldp '() graph :source poison))
+  (emit-op 'ldp '() graph :source poison :expr-temp-p nil))
 
 (defun handle-var-form (form env graph)
   (assert (symbolp (car form)) ()
@@ -229,7 +236,8 @@
              :source form
              :operand-types (list assign-type)
              :result-types (list assign-type)
-             :results (list var-tmp))
+             :results (list var-tmp)
+             :expr-temp-p nil)
     (to-env (car form) var-tmp env :type assign-type :lookup-parents nil)))
 
 (defun handle-var-forms (var-forms env graph)
@@ -324,7 +332,8 @@
                               :source step
                               :operand-types (list step-type)
                               :result-types (list var-type)
-                              :results (list var-tmp)))))
+                              :results (list var-tmp)
+                              :expr-temp-p nil))))
       ;; check for loop exit condition and execute final forms
       (let ((exit-tmp (to-ir exit-condition child-env graph)))
         (emit-bcond exit-tmp bb-cont bb-loop exit-condition graph))
@@ -395,7 +404,8 @@
                                    :source a
                                    :first t
                                    :type type
-                                   :type-info type-info)))
+                                   :type-info type-info
+                                   :expr-temp-p nil)))
                (setf (args graph)
                      (append (args graph)
                              (list temp)))

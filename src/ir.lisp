@@ -8,7 +8,8 @@
    (arity     :initarg :arity     :accessor arity)
    (source    :initarg :source    :accessor source)
    (operands  :initarg :operands  :accessor operands)
-   (results   :initarg :results   :accessor results)))
+   (results   :initarg :results   :accessor results)
+   (expr-temp-p :initarg :expr-temp-p :accessor expr-temp-p)))
 
 (defun op-result-type (op)
   (assert (res-types op) ()
@@ -29,7 +30,7 @@
      ,@(loop
          for op in op-list
          collect
-         (destructuring-bind (opcode res-types op-types) op
+         (destructuring-bind (opcode res-types op-types expr-temp-p) op
            (let ((fn-name (make-op-name opcode))
                  (arity (length op-types)))
              `(defun ,fn-name (operands &key results source
@@ -73,30 +74,31 @@
                                  :arity arity
                                  :source source
                                  :operands operands
+                                 :expr-temp-p ,expr-temp-p
                                  :results results))))))))
 
-;; list of op-name, result types, operand types
+;; list of (op-name, result types, operand types, expr-temp-p)
 (gen-op-make-fns
- ((add    (i32)    (i32 i32))
-  (mul    (i32)    (i32 i32))
-  (lt     (i32)    (i32 i32))
-  (le     (i32)    (i32 i32))
-  (gt     (i32)    (i32 i32))
-  (ge     (i32)    (i32 i32))
-  (cpy    (union)  (union))
-  (jmp    ()       (bb))
-  (bcond  ()       (i32 bb bb))
-  (ret    ()       (union))
+ ((add    (i32)    (i32 i32)   t)
+  (mul    (i32)    (i32 i32)   t)
+  (lt     (i32)    (i32 i32)   t)
+  (le     (i32)    (i32 i32)   t)
+  (gt     (i32)    (i32 i32)   t)
+  (ge     (i32)    (i32 i32)   t)
+  (cpy    (union)  (union)     nil)
+  (jmp    ()       (bb)        nil)
+  (bcond  ()       (i32 bb bb) nil)
+  (ret    ()       (union)     nil)
   ;; Amount of elem argumentscan vary as per array dimensions, which can't be
   ;; expressed in this implicit spec.
   ;; Data layout interpretation for elem arguments is row-major.
-  (elem   (ptr)    (ptr i32))
-  (ldi    (i32)    (imm))
-  (ldp    (poison) ())
-  (ldr    (i32)    (ptr))
-  (str    ()       (i32 ptr))))
+  (elem   (ptr)    (ptr i32)   t)
+  (ldi    (i32)    (imm)       t)
+  (ldp    (poison) ()          t)
+  (ldr    (i32)    (ptr)       t)
+  (str    ()       (i32 ptr)   t)))
 
-(defun install-op (op graph &key source type-info)
+(defun install-op (op graph &key source type-info (expr-temp-p t))
   "Register op in temp table, and append to current block"
   (with-slots (opcode operands res-types results) op
     (let* ((op-ident (op-to-ident opcode operands))
@@ -104,6 +106,7 @@
            (ret (if needs-result
                     (to-temp op-ident (temp-table graph)
                              :source source
+                             :expr-temp-p expr-temp-p
                              :type (op-result-type op)
                              :type-info type-info))))
       (if needs-result
@@ -113,7 +116,7 @@
 
 (defun emit-op (op args graph
                 &key source result-types operand-types
-                  type-info arity results)
+                  type-info arity results (expr-temp-p t))
   (install-op (funcall (make-op-name op) args
                        :source source
                        :result-types result-types
@@ -122,7 +125,8 @@
                        :results results)
               graph
               :source source
-              :type-info type-info))
+              :type-info type-info
+              :expr-temp-p expr-temp-p))
 
 ;; types
 (defclass type-info ()
@@ -161,12 +165,19 @@
 ;; temps
 ;; we store IR temporaries in the graph/global temp table
 (defclass temp ()
-  ((name      :initarg :name      :reader   name)
-   (op-ident  :initarg :op-ident  :reader   op-ident :initform nil)
-   (source    :initarg :source    :reader   source :initform nil)
-   (temp-type :initarg :temp-type :accessor temp-type)
-   (realm     :initarg :realm     :accessor realm)
-   (type-info :initarg :type-info :accessor type-info :initform nil)))
+  ((name         :initarg :name         :reader   name)
+   (op-ident     :initarg :op-ident     :reader   op-ident     :initform nil)
+   (source       :initarg :source       :reader   source       :initform nil)
+   (depends-info :initarg :depends-info :accessor depends-info :initform '())
+   (temp-type    :initarg :temp-type    :accessor temp-type)
+   (realm        :initarg :realm        :accessor realm)
+   (type-info    :initarg :type-info    :accessor type-info    :initform nil)))
+
+(defclass depends-info ()
+  ((dependents       :initarg :dependents       :accessor dependents)
+   (store-dependents :initarg :store-dependents :accessor store-dependents)
+   ;; expression or value temporary
+   (expr-temp-p     :initarg :expr-temp-p     :accessor expr-temp-p)))
 
 (defclass temp-table ()
   ((table :initarg :table :accessor table :initform (make-hash-table :test 'equalp))
@@ -176,17 +187,20 @@
 (defun gen-temp-name (temp-table)
   (format-symbol t "%~S" (funcall (temp-count temp-table))))
 
-(defun to-temp (op-ident temp-table &key source type name first type-info)
+(defun to-temp (op-ident temp-table
+                &key source type name first type-info (expr-temp-p t))
   (with-slots (table temps) temp-table
     (if-let (temp (gethash op-ident table))
       (if first
           (error "No prior entry should exist in the temp table for: ~A" op-ident)
           temp)
       (let* ((temp-name (if name name (gen-temp-name temp-table)))
+             (dep-info (make-instance 'depends-info :expr-temp-p expr-temp-p))
              (temp (setf (gethash op-ident table)
                          (make-instance 'temp :name temp-name
                                               :op-ident op-ident
                                               :source source
+                                              :depends-info dep-info
                                               :temp-type type
                                               :type-info type-info))))
         (setf (gethash temp-name temps)
@@ -202,12 +216,14 @@
       (format nil "(~A ~A)" (name tmp) (print-type tmp))
       (format nil "~A" (name tmp))))
 
-(defun new-temp (temp-table &key type type-info)
+(defun new-temp (temp-table &key type type-info (expr-temp-p nil))
   "Usually used for compiler-generated temps."
   (let* ((name (gen-temp-name temp-table))
+         (dep-info (make-instance 'depends-info :expr-temp-p expr-temp-p))
          (temp (make-instance 'temp :name name
                                     :temp-type type
-                                    :type-info type-info)))
+                                    :type-info type-info
+                                    :depends-info dep-info)))
     (setf (gethash name (temps temp-table))
           temp)))
 
