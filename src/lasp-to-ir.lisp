@@ -412,7 +412,7 @@
                (to-env name temp env :type type))))
   args)
 
-(defun defun-to-ir (expr env)
+(defun lasp-defun-to-ir (expr env)
   (let ((graph (initialize-graph (string-downcase (string (car expr)))))
         (env (expand-env env))
         (ret-val (cadr expr))
@@ -436,35 +436,20 @@
     (make-initial-analyses graph)
     graph))
 
-(defun top-to-ir (expr env)
-  "top level exprs will return flow-graphs but won't pass them"
-  (case (car expr)
-    ('defun (defun-to-ir (cdr expr) env))))
-
-(defun exprs-to-ir (exprs)
+(defun lasp-exprs-to-ir (exprs)
   "abstract from froms input (file, string, etc..)"
   (let ((env (make-env)))
     (cons
-     (loop for f in exprs
-	       collect (if (eq (car f) 'defun)
-		               (top-to-ir f env)
+     (loop for e in exprs
+	       collect (if (eq (car e) 'defun)
+		               (lasp-defun-to-ir (cdr e) env)
 		               (error "only defun toplevel exprs supported at the moment")))
      env)))
 
-(defun read-exprs-from-stream (stream)
-  "`read` stream, so source code gets transexpred into lists of tokens"
-  (loop for statement = (read stream nil)
-        while statement
-        collect statement))
-
-(defun file-to-ir (file)
-  (let* ((exprs (with-open-file (stream file)
-                  (read-exprs-from-stream stream))))
-    (exprs-to-ir exprs)))
-
 (defun lasp-to-ir (name)
   "Convenience function to test files from the Lasp dir."
-  (file-to-ir (opty-path (format nil "snippets/lasp/~A.lasp" name))))
+  (file-to-ir (opty-path (format nil "snippets/lasp/~A.lasp" name))
+              #'lasp-exprs-to-ir))
 
 ;; (lasp-to-ir "maxcol")
 ;; (lasp-to-ir "simple-fns")
